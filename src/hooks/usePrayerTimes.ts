@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchPrayerData, PrayerAPIResponse, HijriDate, PrayerTimes } from '../services/prayerAPI';
+import { fetchPrayerData, fetchPrayerDataByCoords, PrayerAPIResponse, HijriDate, PrayerTimes } from '../services/prayerAPI';
 import { getCurrentLocation } from '../lib/location';
 
 export interface PrayerData {
@@ -66,10 +66,11 @@ export const calculatePrayerStatus = (
     let status: PrayerData['status'] = 'upcoming';
     if (timeInMinutes <= currentTimeInMinutes) {
       status = 'past';
-      if (name !== 'Sunrise') currentPrayerName = name;
     } else if (!nextPrayer && name !== 'Sunrise') {
-      nextPrayer = { name, time, status: 'upcoming' };
+      // الصلاة القادمة هي التي تُعتبر "current"
+      nextPrayer = { name, time, status: 'current' };
       nextPTimeInMinutes = timeInMinutes;
+      currentPrayerName = name;
     }
 
     prayers.push({ name, time, status });
@@ -188,24 +189,35 @@ export const usePrayerTimes = (): UsePrayerTimesResult => {
         }
 
         if (!cachedData) {
-          const hasSavedLocation = Boolean(localStorage.getItem('user_city') && localStorage.getItem('user_country'));
-          if (!hasSavedLocation) {
-            try {
-              const coords = await getCurrentLocation();
-              const response = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json`
-              );
-              const geoData = await response.json();
-              currentCity = geoData.address?.city || geoData.address?.town || geoData.address?.village || currentCity;
-              currentCountry = geoData.address?.country || currentCountry;
-              localStorage.setItem('user_city', currentCity);
-              localStorage.setItem('user_country', currentCountry);
-            } catch (geoErr) {
-              console.warn('Geolocation skipped or failed, using stored defaults.', geoErr);
+          let coordsToUse: { latitude: number; longitude: number } | null = null;
+          
+          try {
+            const coords = await getCurrentLocation();
+            coordsToUse = coords;
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json`
+            );
+            const geoData = await response.json();
+            currentCity = geoData.address?.city || geoData.address?.town || geoData.address?.village || currentCity;
+            currentCountry = geoData.address?.country || currentCountry;
+            localStorage.setItem('user_city', currentCity);
+            localStorage.setItem('user_country', currentCountry);
+            localStorage.setItem('user_lat', coords.latitude.toString());
+            localStorage.setItem('user_lon', coords.longitude.toString());
+          } catch (geoErr) {
+            console.warn('Geolocation skipped or failed, using stored defaults.', geoErr);
+            const lat = localStorage.getItem('user_lat');
+            const lon = localStorage.getItem('user_lon');
+            if (lat && lon) {
+               coordsToUse = { latitude: parseFloat(lat), longitude: parseFloat(lon) };
             }
           }
 
-          cachedData = await fetchPrayerData(currentCity, currentCountry);
+          if (coordsToUse) {
+            cachedData = await fetchPrayerDataByCoords(coordsToUse.latitude, coordsToUse.longitude);
+          } else {
+            cachedData = await fetchPrayerData(currentCity, currentCountry);
+          }
           localStorage.setItem(`prayer_data_${today}`, JSON.stringify(cachedData));
         }
 

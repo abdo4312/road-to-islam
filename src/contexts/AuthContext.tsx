@@ -198,14 +198,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // جلب الـ session الحالية عند فتح التطبيق
     supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
+      .then(({ data: { session } }) => {
         console.log('Auth: Session retrieved', !!session)
         setSession(session)
-        setUser(session?.user ?? null) // ← ADDED
-        if (session?.user) {
-          await fetchProfile(session.user.id)
-          initializePushNotifications() // 🟢 Init push
-        }
+        setUser(session?.user ?? null)
+        // Profile fetch سيتم في useEffect منفصل بيراقب user?.id
       })
       .catch(err => {
         console.error('Auth: getSession error:', err)
@@ -218,25 +215,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // الاستماع لأي تغيير في حالة الـ Auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        try {
-          console.log('Auth: Auth state changed', _event, !!session)
-          setSession(session)
-          setUser(session?.user ?? null)
-          if (session?.user) {
-            await fetchProfile(session.user.id)
-            initializePushNotifications() // 🟢 Init push on login
-          } else {
-            setProfile(null)
-            profileFetchedRef.current = null
-          }
-        } catch (err) {
-          console.error('Auth: onAuthStateChange logic error:', err)
-        } finally {
-          console.log('Auth: isLoading set to false (onAuthStateChange)')
-          setIsLoading(false)
-          clearTimeout(safetyTimer)
-        }
+      (_event, session) => {
+        console.log('Auth: Auth state changed', _event, !!session)
+        setSession(session)
+        setUser(session?.user ?? null)
+        setIsLoading(false)
+        clearTimeout(safetyTimer)
+        // Profile fetch وcleanup سيتم في useEffect منفصل بيراقب user?.id
       }
     )
 
@@ -245,6 +230,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(safetyTimer)
     }
   }, [])
+
+  // ── جلب Profile كل ما user يتغير ─────────────────────────────
+  useEffect(() => {
+    if (user?.id) {
+      profileFetchedRef.current = null   // force fresh fetch على كل تغيير في user
+      void fetchProfile(user.id)
+      initializePushNotifications()
+    } else {
+      setProfile(null)
+      profileFetchedRef.current = null
+    }
+  }, [user?.id])
 
   // ─── Auth Actions ──────────────────────────────────────────
   async function signUp(email: string, password: string, fullName: string) {

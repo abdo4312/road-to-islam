@@ -35,7 +35,7 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
   const [calcMethod, setCalcMethod] = useState('3'); // 3 is Muslim World League
   const [whatsapp, setWhatsapp] = useState('');
   const [gender, setGender] = useState<'male' | 'female' | ''>('');
-  const [isMentor, setIsMentor] = useState(false);
+  const isMentor = profile?.role === 'mentor';
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -62,16 +62,10 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
         setName(realName);
         setEmail(authUser.email || 'No email');
 
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('role, gender, whatsapp_number, full_name')
-          .eq('id', authUser.id)
-          .single();
-
-        if (profileData) {
-          setIsMentor(profileData.role === 'mentor');
-          setGender((profileData.gender as 'male' | 'female' | '') || '');
-          setWhatsapp(profileData.whatsapp_number || '');
+        // خد gender و whatsapp من profile في AuthContext مباشرةً — بدون fetch تاني
+        if (profile) {
+          setGender((profile.gender as 'male' | 'female' | '') || '');
+          setWhatsapp(profile.whatsapp_number || '');
         }
       } else {
         setName(localStorage.getItem('user_name') || 'Guest User');
@@ -84,7 +78,7 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
       setCalcMethod(localStorage.getItem('calc_method') || '3');
     };
     loadProfile();
-  }, []);
+  }, [profile]);
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const langCode = normalizeLanguageCode(e.target.value);
@@ -322,7 +316,7 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
         </div>
 
         {/* Mentor Dashboard Section - Only for Mentors */}
-        {user?.user_metadata?.role === 'mentor' && (
+        {isMentor && (
           <div className="bg-primary/5 dark:bg-primary/10 rounded-3xl p-2 shadow-sm border border-primary/20 dark:border-primary/30">
             <div className="px-4 pt-4 pb-2">
               <h3 className="text-sm font-bold text-primary dark:text-accent uppercase tracking-widest">Mentor Dashboard</h3>

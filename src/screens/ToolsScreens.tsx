@@ -11,6 +11,8 @@ import { useQibla } from '../hooks/useQibla';
 import { useMosques, Mosque } from '../hooks/useMosques';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import { useTranslation } from 'react-i18next';
+import { scheduleAdhanNotifications, createAdhanChannel } from '../lib/adhanService';
+import { MuezzinSelector } from '../components/MuezzinSelector';
 
 // ─────────────────────────────────────────────────────────────
 // Qibla
@@ -150,10 +152,33 @@ export const Qibla = ({ setScreen }: { setScreen: (s: Screen) => void }) => {
 // ─────────────────────────────────────────────────────────────
 // Prayer Times
 // ─────────────────────────────────────────────────────────────
+
+const formatArabicTime = (time: string): string => {
+  const match = time.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return time;
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const isAM = hours < 12;
+  const suffix = isAM ? 'ص' : 'م';
+  if (hours === 0) hours = 12;
+  else if (hours > 12) hours -= 12;
+  const arabicNums = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+  const toArabic = (n: string) => n.split('').map(d => arabicNums[parseInt(d)] ?? d).join('');
+  return `${toArabic(String(hours))}:${toArabic(minutes)} ${suffix}`;
+};
 export const PrayerTimes = ({ setScreen }: { setScreen: (s: Screen) => void }) => {
   const { t } = useTranslation();
   const { prayers, nextPrayer, countdown, city, hijriDateStr, gregorianDateStr, isLoading, error } = usePrayerTimes();
   const [mutedPrayers, setMutedPrayers] = useState<Record<string, boolean>>({});
+  const [showMuezzin, setShowMuezzin] = useState(false);
+
+  // جدول الأذانات لما البيانات تتحمل
+  useEffect(() => {
+    if (prayers.length > 0) {
+      createAdhanChannel();
+      scheduleAdhanNotifications(prayers, mutedPrayers);
+    }
+  }, [prayers, mutedPrayers]);
   const prayerNameMap: Record<string, string> = {
     Fajr: t('pray.fajr'),
     Sunrise: t('pray.sunrise'),
@@ -198,7 +223,19 @@ export const PrayerTimes = ({ setScreen }: { setScreen: (s: Screen) => void }) =
               <p className="text-emerald-50 text-xs opacity-90">{hijriDateStr}</p>
             </div>
           </div>
+          {/* زرار المؤذن */}
+          <button
+            onClick={() => setShowMuezzin(true)}
+            className="p-2.5 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 transition tap-bounce"
+          >
+            🎙️
+          </button>
         </div>
+
+        {/* Selector */}
+        {showMuezzin && (
+          <MuezzinSelector onClose={() => setShowMuezzin(false)} />
+        )}
 
         <div className="text-center mt-2 relative z-10">
           <p className="text-emerald-100 font-medium mb-1 uppercase tracking-widest text-xs">{t('home.nextPrayer')}</p>
@@ -254,7 +291,7 @@ export const PrayerTimes = ({ setScreen }: { setScreen: (s: Screen) => void }) =
                   </div>
                   <div className="flex items-center gap-4">
                     <span className={`font-mono text-xl ${isCurrent ? 'text-primary dark:text-accent font-bold' : isPast ? 'text-gray-400 dark:text-gray-600 font-medium' : 'text-gray-800 dark:text-gray-200 font-semibold'}`}>
-                      {prayer.time}
+                      {formatArabicTime(prayer.time)}
                     </span>
                     {prayer.name !== 'Sunrise' && (
                       <button
