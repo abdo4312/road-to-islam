@@ -25,6 +25,12 @@ export function setIqamaDelay(minutes: number): void {
     localStorage.setItem('iqama_delay', minutes.toString());
 }
 
+// ── Channel ID فريد لكل مؤذن ─────────────────────────────────
+function getAdhanChannelId(): string {
+    const muezzinId = getSelectedMuezzin();
+    return `adhan_${muezzinId}`;
+}
+
 // ── جدول كل أذانات اليوم ─────────────────────────────────────
 export async function scheduleAdhanNotifications(
     prayers: Array<{ name: string; time: string }>,
@@ -43,6 +49,7 @@ export async function scheduleAdhanNotifications(
 
     const muezzinId = getSelectedMuezzin();
     const muezzin = MUEZZINS.find(m => m.id === muezzinId) || MUEZZINS[2];
+    const channelId = getAdhanChannelId();
     const iqamaDelay = getIqamaDelay();
     const today = new Date();
     const notifications = [];
@@ -67,7 +74,7 @@ export async function scheduleAdhanNotifications(
             body: `الأذان — ${muezzin.label}`,
             schedule: { at: prayerDate },
             smallIcon: 'ic_launcher',
-            channelId: 'adhan',
+            channelId: channelId,
         });
 
         // ── Iqama notification ──────────────────────────────────
@@ -79,7 +86,7 @@ export async function scheduleAdhanNotifications(
             schedule: { at: iqamaDate },
             sound: 'iqama',
             smallIcon: 'ic_launcher',
-            channelId: 'adhan',
+            channelId: channelId,
         });
     }
 
@@ -90,10 +97,14 @@ export async function scheduleAdhanNotifications(
 
 async function deleteAdhanChannel(): Promise<void> {
     if (!Capacitor.isNativePlatform()) return;
-    try {
-        await LocalNotifications.deleteChannel({ id: 'adhan' });
-    } catch {
-        // channel might not exist yet — ignore
+    // احذف channel القديم الثابت + كل channels المؤذنين
+    const allIds = ['adhan', ...MUEZZINS.map(m => `adhan_${m.id}`)];
+    for (const id of allIds) {
+        try {
+            await LocalNotifications.deleteChannel({ id });
+        } catch {
+            // channel might not exist — ignore
+        }
     }
 }
 
@@ -101,15 +112,16 @@ async function deleteAdhanChannel(): Promise<void> {
 export async function createAdhanChannel(): Promise<void> {
     if (!Capacitor.isNativePlatform()) return;
     
-    // Must delete first — Android ignores channel updates after first creation
+    // احذف كل الـ channels القديمة أولاً
     await deleteAdhanChannel();
     
     const muezzinId = getSelectedMuezzin();
     const muezzin = MUEZZINS.find(m => m.id === muezzinId) || MUEZZINS[2];
-    
+    const channelId = getAdhanChannelId();
+
     await LocalNotifications.createChannel({
-        id: 'adhan',
-        name: 'أذان الصلاة',
+        id: channelId,
+        name: `أذان — ${muezzin.label}`,
         description: 'أصوات الأذان والإقامة',
         importance: 5, // IMPORTANCE_HIGH
         visibility: 1,
