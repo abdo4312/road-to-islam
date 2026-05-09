@@ -42,7 +42,7 @@ export default defineConfig(({mode}) => {
           ]
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,mp3}'],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/api\.aladhan\.com\/v1\/.*/i,

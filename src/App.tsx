@@ -16,7 +16,22 @@ import AdminScreens from './screens/admin/AdminScreens'
 import { SplashLoader } from './components/SplashLoader'
 import { Onboarding } from './components/Onboarding'
 import { supabase } from './lib/supabase'
+import { App as CapApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import {
+  scheduleAdhanFromCache,
+  updateCountdownNotification,
+  stopCountdownNotification,
+  syncPrayersToNative,
+  getPrayerTimingsFromCache,
+  stopAdhan,
+} from './lib/adhanService';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { PrayerAlarm } from './plugins/PrayerAlarm';
 import { runStartupSync } from './lib/syncService'
+import { adhanPlayer } from './lib/adhanPlayer';
+import { AdhanOverlay } from './components/AdhanOverlay';
+
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +46,8 @@ const queryClient = new QueryClient({
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [adhanVisible, setAdhanVisible] = useState(false);
+  const [adhanPrayerNameAr, setAdhanPrayerNameAr] = useState('');
 
   useEffect(() => {
     const startedAt = Date.now();
@@ -76,8 +93,6 @@ export default function App() {
     }, 2500);
 
     // ── Sync + session check بالتوازي ─────────────────────────
-    const syncPromise = runStartupSync();
-
     void supabase.auth
       .getSession()
       .then(async ({ data, error }) => {
@@ -86,6 +101,9 @@ export default function App() {
           scheduleSplashHide(2500);
           return;
         }
+
+        // بدأ الـ sync مع تمرير الـ session المعروف — بدون call تانية
+        const syncPromise = runStartupSync(data.session);
 
         if (data.session) {
           // مسجّل — انتظر الـ sync يخلص أو 1.5 ثانية
@@ -113,10 +131,118 @@ export default function App() {
     };
   }, []);
 
+  // ── جدولة الأذان والـ countdown عند بدء التطبيق وعند الرجوع من الخلفية ──
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    // جدول عند أول فتح
+    void scheduleAdhanFromCache();
+    const cached = getPrayerTimingsFromCache();
+    if (cached) {
+      void syncPrayersToNative(cached); // هو بيشغّل الـ countdown في الآخر
+    } else {
+      void updateCountdownNotification(); // Fallback لو مفيش كاش
+    }
+
+    // جدول مجدداً عند الرجوع من الخلفية
+    let removeListener: (() => void) | null = null;
+    CapApp.addListener('resume', async () => {
+      await scheduleAdhanFromCache();
+      const cached = getPrayerTimingsFromCache();
+      if (cached) {
+        await syncPrayersToNative(cached);
+      } else {
+        await updateCountdownNotification();
+      }
+    }).then(listener => {
+      removeListener = () => listener.remove();
+    });
+
+    return () => {
+      if (removeListener) removeListener();
+    };
+  }, []);
+
   const handleOnboardingComplete = () => {
     localStorage.setItem('has_onboarded_v1', 'true');
     setShowOnboarding(false);
   };
+
+  // ── LocalNotifications listener — يشغّل الأذان Native عند وصول إشعار الأذان ──
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    // لما التطبيق في الـ foreground ويجي notification أذان
+    const receivedSub = LocalNotifications.addListener(
+      'localNotificationReceived',
+      async (notification) => {
+        const extra = notification.extra as Record<string, string> | undefined;
+        if (extra?.type === 'adhan' && extra?.shouldPlayAdhan === 'true') {
+          try {
+            await PrayerAlarm.playAdhan({
+              muezzin: extra.muezzin || 'makkah',
+              prayerName: extra.prayerName || '',
+              prayerNameAr: extra.prayerNameAr || '',
+            });
+            // أظهر الـ overlay
+            setAdhanPrayerNameAr(extra.prayerNameAr || '');
+            setAdhanVisible(true);
+          } catch (err) {
+            console.warn('PrayerAlarm.playAdhan failed, falling back to web audio:', err);
+            // Fallback للـ web audio player
+            adhanPlayer.reloadForNewMuezzin();
+          }
+        }
+      }
+    );
+
+    // لما المستخدم يضغط على الـ notification
+    const actionSub = LocalNotifications.addListener(
+      'localNotificationActionPerformed',
+      async (action) => {
+        const extra = action.notification.extra as Record<string, string> | undefined;
+        if (extra?.type === 'adhan') {
+          // وقّف الأذان Native
+          try { await stopAdhan(); } catch { /* ignore */ }
+          // وقّف الـ web audio
+          adhanPlayer.stopAudio();
+          setAdhanVisible(false);
+        }
+      }
+    );
+
+    return () => {
+      receivedSub.then(l => l.remove());
+      actionSub.then(l => l.remove());
+    };
+  }, []);
+
+  // ── Start the global adhan player on app mount ──────────────────────
+  useEffect(() => {
+    adhanPlayer.start();
+
+    const unsubAdhan = adhanPlayer.onAdhan(({ prayerNameAr }) => {
+      // على Android: localNotificationReceived بيتولى تشغيل الأذان والـ overlay
+      // عبر PrayerAlarm.playAdhan() — نتجنب التشغيل المزدوج هنا
+      if (Capacitor.isNativePlatform()) return;
+      setAdhanPrayerNameAr(prayerNameAr);
+      setAdhanVisible(true);
+    });
+
+    // Reload audio on muezzin change (storage event from MuezzinSelector)
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'selected_muezzin') {
+        adhanPlayer.reloadForNewMuezzin();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      unsubAdhan();
+      window.removeEventListener('storage', handleStorage);
+      adhanPlayer.destroy();
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -174,6 +300,12 @@ export default function App() {
             </Routes>
           </HashRouter>
         )}
+        {/* Global Adhan Overlay — appears on top of everything */}
+        <AdhanOverlay
+          isVisible={adhanVisible}
+          prayerNameAr={adhanPrayerNameAr}
+          onDismiss={() => setAdhanVisible(false)}
+        />
       </AuthProvider>
     </QueryClientProvider>
   )

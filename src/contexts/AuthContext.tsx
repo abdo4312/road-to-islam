@@ -262,12 +262,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signInWithGoogle() {
     if (Capacitor.isNativePlatform()) {
-      await supabase.auth.signOut().catch(() => {})
-      setSession(null)
-      setUser(null)
-      setProfile(null)
-      profileFetchedRef.current = null
-
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {

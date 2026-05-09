@@ -179,52 +179,100 @@ interface TableProps<T> {
 
 export function Table<T>({ columns, data, keyField, isLoading, emptyText = 'لا توجد بيانات' }: TableProps<T>) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-black/5 dark:border-white/5">
-      <table className="w-full text-sm" dir="rtl">
-        <thead>
-          <tr className="bg-gray-50 dark:bg-white/5 border-b border-black/5 dark:border-white/5">
-            {columns.map(c => (
-              <th
-                key={c.key}
-                style={{ width: c.width }}
-                className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 whitespace-nowrap"
-              >
-                {c.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="bg-white dark:bg-[#1a2e1a] divide-y divide-black/4 dark:divide-white/4">
-          {isLoading ? (
-            [...Array(5)].map((_, i) => (
-              <tr key={i} className="animate-skeleton">
-                {columns.map(c => (
-                  <td key={c.key} className="px-4 py-3">
-                    <div className="h-4 bg-gray-100 dark:bg-gray-700 rounded" />
-                  </td>
-                ))}
-              </tr>
-            ))
-          ) : data.length === 0 ? (
-            <tr>
-              <td colSpan={columns.length} className="px-4 py-10 text-center text-gray-400 text-sm">
-                {emptyText}
-              </td>
+    <>
+      {/* ── Desktop: Table ── */}
+      <div className="hidden md:block overflow-x-auto rounded-2xl border border-black/5 dark:border-white/5">
+        <table className="w-full text-sm" dir="rtl">
+          <thead>
+            <tr className="bg-gray-50 dark:bg-white/5 border-b border-black/5 dark:border-white/5">
+              {columns.map(c => (
+                <th
+                  key={c.key}
+                  style={{ width: c.width }}
+                  className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 whitespace-nowrap"
+                >
+                  {c.label}
+                </th>
+              ))}
             </tr>
-          ) : (
-            data.map(row => (
-              <tr key={String(row[keyField])} className="hover:bg-gray-50 dark:hover:bg-white/3 transition-colors">
-                {columns.map(c => (
-                  <td key={c.key} className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">
-                    {c.render ? c.render(row) : String((row as any)[c.key] ?? '')}
-                  </td>
-                ))}
+          </thead>
+          <tbody className="bg-white dark:bg-[#1a2e1a] divide-y divide-black/4 dark:divide-white/4">
+            {isLoading ? (
+              [...Array(5)].map((_, i) => (
+                <tr key={i} className="animate-skeleton">
+                  {columns.map(c => (
+                    <td key={c.key} className="px-4 py-3">
+                      <div className="h-4 bg-gray-100 dark:bg-gray-700 rounded" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : data.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-4 py-10 text-center text-gray-400 text-sm">
+                  {emptyText}
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+            ) : (
+              data.map(row => (
+                <tr key={String(row[keyField])} className="hover:bg-gray-50 dark:hover:bg-white/3 transition-colors">
+                  {columns.map(c => (
+                    <td key={c.key} className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">
+                      {c.render ? c.render(row) : String((row as any)[c.key] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Mobile: Cards ── */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          [...Array(3)].map((_, i) => (
+            <div key={i} className="bg-white dark:bg-[#1a2e1a] rounded-2xl p-4 border border-black/5 dark:border-white/5 space-y-2 animate-pulse">
+              <div className="h-4 bg-gray-100 dark:bg-gray-700 rounded w-3/4" />
+              <div className="h-3 bg-gray-100 dark:bg-gray-700 rounded w-1/2" />
+            </div>
+          ))
+        ) : data.length === 0 ? (
+          <div className="bg-white dark:bg-[#1a2e1a] rounded-2xl p-8 text-center text-gray-400 text-sm border border-black/5 dark:border-white/5">
+            {emptyText}
+          </div>
+        ) : (
+          data.map(row => (
+            <div
+              key={String(row[keyField])}
+              className="bg-white dark:bg-[#1a2e1a] rounded-2xl p-4 border border-black/5 dark:border-white/5 space-y-2.5"
+              dir="rtl"
+            >
+              {columns
+                .filter(c => c.label) // الأعمدة اللي عندها label بس
+                .map(c => (
+                  <div key={c.key} className="flex items-start justify-between gap-3">
+                    <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 shrink-0 mt-0.5">
+                      {c.label}
+                    </span>
+                    <div className="text-sm text-gray-800 dark:text-gray-200 text-right flex-1 min-w-0">
+                      {c.render ? c.render(row) : String((row as any)[c.key] ?? '')}
+                    </div>
+                  </div>
+                ))}
+              {/* عمود الـ actions بدون label يظهر في الأسفل كامل العرض */}
+              {columns
+                .filter(c => !c.label)
+                .map(c => (
+                  <div key={c.key} className="pt-1 border-t border-black/5 dark:border-white/5">
+                    {c.render ? c.render(row) : null}
+                  </div>
+                ))}
+            </div>
+          ))
+        )}
+      </div>
+    </>
   )
 }
 

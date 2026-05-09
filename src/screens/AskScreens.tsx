@@ -18,12 +18,53 @@ export const AskCategories = ({ setScreen }: { setScreen: (s: Screen) => void })
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'faq' | 'ask'>('faq');
 
-  const filteredFaqs = FAQS.filter(faq => {
-    const matchesSearch = faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const [dbFaqs, setDbFaqs] = useState<Array<{
+    id: string;
+    question: string;
+    answer: string | null;
+    category: string | null;
+    created_at: string;
+  }>>([]);
+
+  React.useEffect(() => {
+    supabase
+      .from('questions')
+      .select('id, question, answer, category, created_at')
+      .eq('is_public', true)
+      .eq('is_answered', true)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setDbFaqs(data ?? []));
+  }, []);
+
+  // الـ DB faqs تتحول لنفس شكل الـ FAQ interface
+  const dbFaqsMapped = dbFaqs
+    .filter(q => {
+      const matchesSearch =
+        q.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (q.answer ?? '').toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = selectedCategory
+        ? q.category === selectedCategory
+        : true;
+      return matchesSearch && matchesCategory;
+    })
+    .map(q => ({
+      id: q.id,
+      category: q.category ?? 'general',
+      question: q.question,
+      shortAnswer: (q.answer ?? '').slice(0, 120),
+      fullAnswer: q.answer ?? '',
+      source: '',
+    }));
+
+  const hardcodedFiltered = FAQS.filter(faq => {
+    const matchesSearch =
+      faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
       faq.shortAnswer.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory ? faq.category === selectedCategory : true;
     return matchesSearch && matchesCategory;
   });
+
+  const filteredFaqs = [...dbFaqsMapped, ...hardcodedFiltered];
 
   const handleQuestionClick = (faq: FAQ) => {
     localStorage.setItem('selected_faq_id', faq.id);
@@ -330,7 +371,33 @@ function AskScholar() {
 export const AskDetail = ({ setScreen }: { setScreen: (s: Screen) => void }) => {
   const { t } = useTranslation();
   const faqId = localStorage.getItem('selected_faq_id');
-  const faq = FAQS.find(f => f.id === faqId) || FAQS[0];
+  const [dbFaq, setDbFaq] = useState<FAQ | null>(null);
+  
+  const hardcodedFaq = FAQS.find(f => f.id === faqId);
+
+  React.useEffect(() => {
+    if (!hardcodedFaq && faqId) {
+      supabase
+        .from('questions')
+        .select('*')
+        .eq('id', faqId)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setDbFaq({
+              id: data.id,
+              category: data.category ?? 'general',
+              question: data.question,
+              shortAnswer: (data.answer ?? '').slice(0, 120),
+              fullAnswer: data.answer ?? '',
+              source: '',
+            });
+          }
+        });
+    }
+  }, [faqId, hardcodedFaq]);
+
+  const faq = hardcodedFaq || dbFaq || FAQS[0];
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col h-full bg-bg-light dark:bg-bg-dark pb-28 overflow-y-auto relative islamic-pattern">

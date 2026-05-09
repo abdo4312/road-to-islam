@@ -24,7 +24,8 @@ export interface PrayerAPIResponse {
 }
 
 export const fetchPrayerData = async (city: string, country: string): Promise<PrayerAPIResponse> => {
-  const response = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=5`);
+  const method = localStorage.getItem('calc_method') || '5';
+  const response = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=${method}`);
   if (!response.ok) {
     throw new Error('Failed to fetch prayer data');
   }
@@ -33,7 +34,8 @@ export const fetchPrayerData = async (city: string, country: string): Promise<Pr
 };
 
 export const fetchPrayerDataByCoords = async (latitude: number, longitude: number): Promise<PrayerAPIResponse> => {
-  const response = await fetch(`https://api.aladhan.com/v1/timings?latitude=${latitude}&longitude=${longitude}&method=5`);
+  const method = localStorage.getItem('calc_method') || '5';
+  const response = await fetch(`https://api.aladhan.com/v1/timings?latitude=${latitude}&longitude=${longitude}&method=${method}`);
   if (!response.ok) {
     throw new Error('Failed to fetch prayer data by coordinates');
   }

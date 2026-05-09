@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n, { AppLanguage, applyLanguageAttributes, normalizeLanguageCode } from '../i18n';
+import { setNativeNotificationsEnabled } from '../lib/adhanService';
+import { Capacitor } from '@capacitor/core';
 
 const LANGUAGE_OPTIONS: Array<{ code: AppLanguage; label: string }> = [
   { code: 'en', label: 'English' },
@@ -94,10 +96,13 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
       });
   };
 
-  const toggleNotifications = () => {
+  const toggleNotifications = async () => {
     const nextNotif = !notifications;
     setNotifications(nextNotif);
     localStorage.setItem('prayer_notifications', nextNotif.toString());
+    if (Capacitor.isNativePlatform()) {
+      await setNativeNotificationsEnabled(nextNotif);
+    }
   };
 
   const handleCalcMethodChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -323,7 +328,7 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
             </div>
             <div className="p-2">
               <button
-                onClick={() => setScreen?.('MENTOR_DASHBOARD')}
+                onClick={() => navigate('/', { state: { initialScreen: 'MENTOR_DASHBOARD' } })}
                 className="w-full flex items-center justify-between p-4 bg-white dark:bg-black rounded-2xl border border-primary/10 hover:bg-primary/5 dark:hover:bg-primary/20 transition group tap-bounce"
               >
                 <div className="flex items-center gap-3 text-primary dark:text-accent font-bold">

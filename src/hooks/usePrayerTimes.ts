@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { fetchPrayerData, fetchPrayerDataByCoords, PrayerAPIResponse, HijriDate, PrayerTimes } from '../services/prayerAPI';
 import { getCurrentLocation } from '../lib/location';
+import { syncPrayersToNative } from '../lib/adhanService';
+import { Capacitor } from '@capacitor/core';
 
 export interface PrayerData {
   name: string;
@@ -34,10 +36,14 @@ const parseTimeToMinutes = (time: string): number | null => {
 };
 
 const formatCountdown = (diffMins: number): string => {
-  const safeDiff = Math.max(0, diffMins);
-  const hrs = Math.floor(safeDiff / 60);
-  const mins = safeDiff % 60;
-  return `${hrs}h ${mins}m`;
+  // diffMins here is actually still in minutes from calculatePrayerStatus
+  // Convert to seconds for HH:MM:SS display
+  const totalSecs = Math.max(0, Math.round(diffMins * 60));
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 };
 
 const getDateKey = (): string => new Date().toISOString().split('T')[0];
@@ -49,7 +55,8 @@ export const calculatePrayerStatus = (
   _locationCity: string
 ): PrayerStatusResult => {
   const now = new Date();
-  const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+  // مقارنة بالثانية عشان الـ status يكون دقيق
+  const currentTimeSecs = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
 
   const prayers: PrayerData[] = [];
   let nextPrayer: PrayerData | null = null;
@@ -57,16 +64,28 @@ export const calculatePrayerStatus = (
   let currentPrayerName: string | null = null;
 
   for (const name of PRAYER_ORDER) {
+    if (name === 'Sunrise') {
+      // Sunrise مش صلاة — نضيفها كـ past أو upcoming بس، بدون حساب current
+      const time = timings[name];
+      if (!time) continue;
+      const timeInMinutes = parseTimeToMinutes(time);
+      if (timeInMinutes === null) continue;
+      const timeSecs = timeInMinutes * 60;
+      prayers.push({ name, time, status: timeSecs <= currentTimeSecs ? 'past' : 'upcoming' });
+      continue;
+    }
+
     const time = timings[name];
     if (!time) continue;
 
     const timeInMinutes = parseTimeToMinutes(time);
     if (timeInMinutes === null) continue;
+    const timeSecs = timeInMinutes * 60;
 
     let status: PrayerData['status'] = 'upcoming';
-    if (timeInMinutes <= currentTimeInMinutes) {
+    if (timeSecs <= currentTimeSecs) {
       status = 'past';
-    } else if (!nextPrayer && name !== 'Sunrise') {
+    } else if (!nextPrayer) {
       // الصلاة القادمة هي التي تُعتبر "current"
       nextPrayer = { name, time, status: 'current' };
       nextPTimeInMinutes = timeInMinutes;
@@ -118,9 +137,15 @@ export const usePrayerTimes = (): UsePrayerTimesResult => {
       const { prayers: nextPrayers, nextPrayer: nextPrayerData, nextPTimeInMinutes } =
         calculatePrayerStatus(data.timings, data.date.hijri, data.date.readable, locationCity);
 
-      const currentMins = new Date().getHours() * 60 + new Date().getMinutes();
-      let diffMins = nextPTimeInMinutes - currentMins;
-      if (diffMins < 0) diffMins += 24 * 60;
+      const now = new Date();
+      const currentSecs = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      const nextPTimeSecs = nextPTimeInMinutes * 60;
+      let diffSecs = nextPTimeSecs - currentSecs;
+      // لو الفارق سالب يعني الصلاة القادمة هي فجر بكرة
+      if (diffSecs < 0) diffSecs += 24 * 3600;
+      // لو الفارق كبير جداً (أكتر من 24 ساعة) — تصحيح
+      if (diffSecs > 86400) diffSecs -= 86400;
+      const diffMins = diffSecs / 60;
 
       if (!isMounted) return;
 
@@ -219,6 +244,14 @@ export const usePrayerTimes = (): UsePrayerTimesResult => {
             cachedData = await fetchPrayerData(currentCity, currentCountry);
           }
           localStorage.setItem(`prayer_data_${today}`, JSON.stringify(cachedData));
+          
+          // FIX: sync prayer times to native AlarmManager after every successful fetch
+          if (Capacitor.isNativePlatform()) {
+            const prayersToSync = Object.entries(cachedData.timings)
+              .filter(([n]) => !['Sunrise', 'Midnight', 'Firstthird', 'Lastthird', 'Imsak'].includes(n))
+              .map(([name, time]) => ({ name, time: String(time).slice(0, 5) }));
+            void syncPrayersToNative(prayersToSync);
+          }
         }
 
         latestPrayerData = cachedData;
@@ -243,7 +276,7 @@ export const usePrayerTimes = (): UsePrayerTimesResult => {
 
       countdownIntervalId = window.setInterval(() => {
         void refreshTick();
-      }, 60000);
+      }, 1000);
       scheduleMidnightRefresh();
     };
 

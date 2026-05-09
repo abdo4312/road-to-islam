@@ -211,6 +211,7 @@ export interface Database {
           is_public: boolean
           answered_by: string | null
           answered_at: string | null
+          category: string | null
           created_at: string
           updated_at: string
         }
@@ -221,6 +222,7 @@ export interface Database {
           answer?: string | null
           is_answered?: boolean
           is_public?: boolean
+          category?: string | null
         }
         Update: {
           answer?: string | null
@@ -228,6 +230,7 @@ export interface Database {
           is_public?: boolean
           answered_by?: string | null
           answered_at?: string | null
+          category?: string | null
         }
         Relationships: []
       }

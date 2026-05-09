@@ -11,7 +11,8 @@ import { useQibla } from '../hooks/useQibla';
 import { useMosques, Mosque } from '../hooks/useMosques';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import { useTranslation } from 'react-i18next';
-import { scheduleAdhanNotifications, createAdhanChannel } from '../lib/adhanService';
+import { createAdhanChannel, updateCountdownNotification, syncPrayersToNative } from '../lib/adhanService';
+import { useLiveCountdown } from '../hooks/useLiveCountdown';
 import { MuezzinSelector } from '../components/MuezzinSelector';
 
 // ─────────────────────────────────────────────────────────────
@@ -168,17 +169,28 @@ const formatArabicTime = (time: string): string => {
 };
 export const PrayerTimes = ({ setScreen }: { setScreen: (s: Screen) => void }) => {
   const { t } = useTranslation();
-  const { prayers, nextPrayer, countdown, city, hijriDateStr, gregorianDateStr, isLoading, error } = usePrayerTimes();
+  const { prayers, nextPrayer, city, hijriDateStr, gregorianDateStr, isLoading, error } = usePrayerTimes();
+  
+  // 🔴 Live countdown — updates every second
+  const { countdown, prayerNameAr: liveNextPrayerAr, prayerTime: liveNextTime } = useLiveCountdown();
   const [mutedPrayers, setMutedPrayers] = useState<Record<string, boolean>>({});
   const [showMuezzin, setShowMuezzin] = useState(false);
 
   // جدول الأذانات لما البيانات تتحمل
   useEffect(() => {
     if (prayers.length > 0) {
-      createAdhanChannel();
-      scheduleAdhanNotifications(prayers, mutedPrayers);
+      const setup = async () => {
+        // 1. أنشئ الـ channel الصوتي
+        await createAdhanChannel();
+        // 2. بعّت بيانات الصلاة للـ native plugin (يشتغل في الخلفية)
+        await syncPrayersToNative(prayers);
+        // 3. حدّث الـ countdown في شريط الإشعارات
+        await updateCountdownNotification();
+        // ملاحظة: scheduleAdhanNotifications اتشال — adhanPlayer بيتولى تشغيل الصوت مباشرة
+      };
+      void setup();
     }
-  }, [prayers, mutedPrayers]);
+  }, [prayers]);
   const prayerNameMap: Record<string, string> = {
     Fajr: t('pray.fajr'),
     Sunrise: t('pray.sunrise'),
@@ -240,10 +252,11 @@ export const PrayerTimes = ({ setScreen }: { setScreen: (s: Screen) => void }) =
         <div className="text-center mt-2 relative z-10">
           <p className="text-emerald-100 font-medium mb-1 uppercase tracking-widest text-xs">{t('home.nextPrayer')}</p>
           <h1 className="text-5xl font-bold font-serif text-accent mb-2 drop-shadow-md">
-            {isLoading ? '...' : (nextPrayer ? prayerNameMap[nextPrayer.name] || nextPrayer.name : '--')}
+            {isLoading ? '...' : (liveNextPrayerAr || (nextPrayer ? prayerNameMap[nextPrayer.name] || nextPrayer.name : '--'))}
           </h1>
-          <p className="text-xl font-medium bg-white/10 inline-block px-4 py-1.5 rounded-full backdrop-blur-sm border border-white/20">
-            {isLoading ? '--h --m' : `- ${countdown} -`}
+          {/* Live countdown — ticks every second */}
+          <p className="text-2xl font-bold font-mono bg-white/10 inline-block px-4 py-1.5 rounded-full backdrop-blur-sm border border-white/20 tracking-widest tabular-nums">
+            {isLoading ? '--:--:--' : countdown}
           </p>
         </div>
       </div>

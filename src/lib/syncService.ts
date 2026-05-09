@@ -120,9 +120,15 @@ async function syncProfile(userId: string): Promise<void> {
 }
 
 // ─── Main sync function ────────────────────────────────────────
-export async function runStartupSync(): Promise<void> {
+import type { Session } from '@supabase/supabase-js';
+
+export async function runStartupSync(existingSession?: Session | null): Promise<void> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    let session = existingSession;
+    if (session === undefined) {
+      const { data } = await supabase.auth.getSession();
+      session = data.session;
+    }
 
     if (session?.user) {
       // مستخدم مسجّل — sync كل حاجة بالتوازي

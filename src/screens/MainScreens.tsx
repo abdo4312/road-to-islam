@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useDailyJourney } from '../hooks/useProgress'
 import { usePrayerTimes } from '../hooks/usePrayerTimes'
+import { useLiveCountdown } from '../hooks/useLiveCountdown'
 import { useDarkMode } from '../hooks/useDarkMode'
 import { useNotifications } from '../hooks/useNotifications'
 import { LESSONS } from '../constants/lessons'
@@ -26,7 +27,8 @@ import { useTranslation } from 'react-i18next'
 export const Home = ({ setScreen }: { setScreen: (s: Screen) => void }) => {
   const { t } = useTranslation()
   const { currentDay, progressPercent, userName } = useDailyJourney()
-  const { nextPrayer, countdown } = usePrayerTimes()
+  const { nextPrayer } = usePrayerTimes()
+  const { countdown, prayerNameAr: liveNextNameAr } = useLiveCountdown()
   const { isDark, toggle: toggleDarkMode } = useDarkMode()
   const { unreadCount } = useNotifications()
   const { user } = useAuth()
@@ -113,8 +115,12 @@ export const Home = ({ setScreen }: { setScreen: (s: Screen) => void }) => {
             <p className="text-white/70 text-sm font-medium mb-1 flex items-center gap-1">
               <Clock size={14} /> {t('home.nextPrayer')}
             </p>
-            <h3 className="text-2xl font-bold text-white">{nextPrayer?.name || t('common.loading')}</h3>
-            <p className="text-sm mt-1 text-emerald-200">{nextPrayer?.time || '--:--'} • in {countdown || '--h --m'}</p>
+            <h3 className="text-2xl font-bold text-white">
+              {liveNextNameAr || nextPrayer?.name || t('common.loading')}
+            </h3>
+            <p className="text-sm mt-1 text-emerald-200 font-mono tabular-nums">
+              {nextPrayer?.time || '--:--'} · {countdown || '--:--:--'}
+            </p>
           </div>
           <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
             <Clock size={32} className="text-white drop-shadow-md" />
