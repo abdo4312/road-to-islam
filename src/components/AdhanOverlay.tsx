@@ -2,6 +2,8 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { adhanPlayer } from '../lib/adhanPlayer';
+import { PrayerAlarm } from '../plugins/PrayerAlarm';
+import { Capacitor } from '@capacitor/core';
 
 interface Props {
   isVisible: boolean;
@@ -10,8 +12,17 @@ interface Props {
 }
 
 export const AdhanOverlay: React.FC<Props> = ({ isVisible, prayerNameAr, onDismiss }) => {
-  const handleDismiss = () => {
+  const handleDismiss = async () => {
+    // وقّف الـ JS audio
     adhanPlayer.stopAudio();
+    // وقّف الـ Native AdhanPlayerService + IqamaPlayerService
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await PrayerAlarm.stopAdhan();
+      } catch {
+        // silent
+      }
+    }
     onDismiss();
   };
 

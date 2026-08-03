@@ -30,6 +30,12 @@ const CDN_FALLBACKS: Record<string, string> = {
   europe:      'https://www.islamcan.com/audio/adhan/5.mp3',
 };
 
+// ── مدة الأذان ─────────────────────────────────────────────────────
+const SILENT_BEEP_URL = '/audio/notification_beep.mp3';
+function getAdhanDurationMode(): string {
+  return localStorage.getItem('prayer_adhan_duration_mode') || 'full';
+}
+
 // ── Callback types ────────────────────────────────────────────────────
 export type TickCallback = (info: {
   secondsLeft: number;
@@ -42,6 +48,8 @@ export type AdhanCallback = (info: {
   prayerName: string;
   prayerNameAr: string;
 }) => void;
+
+export type AdhanEndCallback = () => void;
 
 // ── Helper: format seconds → "HH:MM:SS" ─────────────────────────────
 export function formatSeconds(totalSeconds: number): string {
@@ -60,8 +68,24 @@ class AdhanPlayer {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private tickCallbacks: Set<TickCallback> = new Set();
   private adhanCallbacks: Set<AdhanCallback> = new Set();
+  private adhanEndCallbacks: Set<AdhanEndCallback> = new Set();
   private lastPlayedPrayer = '';
   private isPlaying = false;
+  /**
+   * عندما يكون false، يتخطّى tick() استدعاء triggerManualFallback() تلقائياً
+   * عند وصول وقت الصلاة. يُستخدم على أندرويد لأن النظام Native (PrayerAlarm.playAdhan)
+   * هو المسؤول عن تشغيل الأذان هناك، فلا حاجة للتشغيل المزدوج من طبقة الويب.
+   * الـ tick نفسه يستمر في العمل لإطلاق onTick callbacks (العد التنازلي UI).
+   */
+  private autoPlayEnabled = true;
+
+  // ── الوضع الصامت: صوت تنبيه متكرر ──
+  private silentBeepAudio: HTMLAudioElement | null = null;
+  private silentBeepIntervalId: ReturnType<typeof setInterval> | null = null;
+  private silentBeepCount = 0;
+
+  // ── الوضع القصير: إيقاف بعد 30 ثانية ──
+  private shortModeTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   // ── Audio management ────────────────────────────────────────────────
   private ensureAudio(): HTMLAudioElement {
@@ -165,7 +189,7 @@ class AdhanPlayer {
     // Reload audio if muezzin changed
     this.ensureAudio();
 
-    // Fire tick callbacks (for live countdown UI)
+    // Fire tick callbacks (for live countdown UI) — يُطلق دائماً على كل المنصات
     this.tickCallbacks.forEach(cb => cb({
       secondsLeft: next.secondsLeft,
       prayerName: next.name,
@@ -175,32 +199,60 @@ class AdhanPlayer {
 
     // ── Play adhan when prayer time arrives ─────────────────────────
     // Window of 10 seconds to catch slight timer drift
-    if (next.secondsLeft <= 10 && next.name !== this.lastPlayedPrayer) {
+    // يُتجاوز تلقائياً على أندرويد (autoPlayEnabled = false) لأن النظام Native
+    // يتولى التشغيل هناك عبر PrayerAlarm.playAdhan()
+    if (this.autoPlayEnabled && next.secondsLeft <= 10 && next.name !== this.lastPlayedPrayer) {
       this.lastPlayedPrayer = next.name;
-      this.triggerAdhan(next.name, next.nameAr);
+      this.triggerManualFallback(next.name, next.nameAr);
     }
   }
 
-  private async triggerAdhan(prayerName: string, prayerNameAr: string): Promise<void> {
+  /**
+   * يشغّل الأذان يدوياً ويُطلق onAdhan callbacks.
+   * يُستدعى من:
+   *   - tick() تلقائياً عند وصول وقت الصلاة (فقط إذا autoPlayEnabled = true، أي على الويب)
+   *   - App.tsx في كتلة catch كـ Fallback عند فشل PrayerAlarm.playAdhan() على أندرويد
+   *
+   * الـ callbacks تُطلق أولاً (قبل محاولة تشغيل الصوت) لضمان ظهور overlay فوراً
+   * حتى لو حصل حظر autoplay. الصوت يُعاد تشغيله عند أول تفاعل من المستخدم.
+   */
+  async triggerManualFallback(prayerName: string, prayerNameAr: string): Promise<void> {
+    // أطلق الـ callbacks أولاً — overlay يظهر فوراً قبل محاولة الصوت
+    this.adhanCallbacks.forEach(cb => cb({ prayerName, prayerNameAr }));
+
+    const mode = getAdhanDurationMode();
+
+    // ── الوضع الصامت: صوت تنبيه متكرر بدل المؤذن ──
+    if (mode === 'silent') {
+      this.playSilentBeepRepeat();
+      return;
+    }
+
     try {
       const audio = this.ensureAudio();
       audio.currentTime = 0;
       await audio.play();
 
-      // Notify all adhan callbacks
-      this.adhanCallbacks.forEach(cb => cb({ prayerName, prayerNameAr }));
-
+      // ── الوضع القصير: إيقاف الصوت والكارت بعد 30 ثانية ──
+      if (mode === 'short') {
+        this.shortModeTimeoutId = setTimeout(() => {
+          this.stopAudio();
+          this.notifyAdhanEnd();
+          // ملاحظة: الـ overlay يختفي لأن stopAudio يغيّر isPlaying لـ false
+          // والـ overlay في React غالباً مربوط بحالة الـ audio أو يُغلق يدوياً
+          // لكن لضمان الإغلاق التام، نُطلق الـ callbacks بحالة فارغة أو نعتمد على stopAudio
+        }, 30_000);
+      }
     } catch (err) {
       // Autoplay blocked — will try on next user interaction
       console.warn('AdhanPlayer: autoplay blocked, will retry on user gesture', err);
 
-      // Store pending adhan and retry on next user touch
+      // Retry audio playback on next user touch/click (overlay already shown)
       const retryOnInteraction = async () => {
         try {
           const audio = this.ensureAudio();
           audio.currentTime = 0;
           await audio.play();
-          this.adhanCallbacks.forEach(cb => cb({ prayerName, prayerNameAr }));
         } catch { /* ignore */ }
         document.removeEventListener('touchstart', retryOnInteraction);
         document.removeEventListener('click', retryOnInteraction);
@@ -208,6 +260,51 @@ class AdhanPlayer {
       document.addEventListener('touchstart', retryOnInteraction, { once: true });
       document.addEventListener('click', retryOnInteraction, { once: true });
     }
+  }
+
+  /**
+   * يشغّل صوت تنبيه قصير ويعيده كل 30 ثانية لمدة 3 دقائق (6 تكرارات).
+   * بديل شرعي لصوت المؤذن.
+   */
+  private playSilentBeepRepeat(): void {
+    this.silentBeepCount = 1;
+    const playBeep = () => {
+      try {
+        if (!this.silentBeepAudio) {
+          this.silentBeepAudio = new Audio(SILENT_BEEP_URL);
+          this.silentBeepAudio.preload = 'auto';
+        }
+        this.silentBeepAudio.currentTime = 0;
+        void this.silentBeepAudio.play().catch(() => { /* ignore autoplay block */ });
+      } catch { /* ignore */ }
+    };
+
+    // أول تشغيل فوري
+    playBeep();
+
+    // تكرار كل 30 ثانية — يتوقف بعد 6 تكرارات (3 دقائق) أو عند stopAudio()
+    this.silentBeepIntervalId = setInterval(() => {
+      this.silentBeepCount++;
+      if (this.silentBeepCount > 6) {
+        this.stopSilentBeepRepeat();
+        this.notifyAdhanEnd();
+        return;
+      }
+      playBeep();
+    }, 30_000);
+  }
+
+  private stopSilentBeepRepeat(): void {
+    if (this.silentBeepIntervalId) {
+      clearInterval(this.silentBeepIntervalId);
+      this.silentBeepIntervalId = null;
+      this.notifyAdhanEnd();
+    }
+    if (this.silentBeepAudio) {
+      try { this.silentBeepAudio.pause(); } catch { /* ignore */ }
+      this.silentBeepAudio = null;
+    }
+    this.silentBeepCount = 0;
   }
 
   // ── Subscribe / unsubscribe ─────────────────────────────────────────
@@ -221,6 +318,17 @@ class AdhanPlayer {
     return () => this.adhanCallbacks.delete(cb);
   }
 
+  onAdhanEnd(cb: AdhanEndCallback): () => void {
+    this.adhanEndCallbacks.add(cb);
+    return () => this.adhanEndCallbacks.delete(cb);
+  }
+
+  private notifyAdhanEnd(): void {
+    this.adhanEndCallbacks.forEach(cb => {
+      try { cb(); } catch { /* ignore */ }
+    });
+  }
+
   // ── Manual controls ─────────────────────────────────────────────────
   stopAudio(): void {
     if (this.audio && !this.audio.paused) {
@@ -228,10 +336,26 @@ class AdhanPlayer {
       this.audio.currentTime = 0;
     }
     this.isPlaying = false;
+    this.stopSilentBeepRepeat();
+    if (this.shortModeTimeoutId) {
+      clearTimeout(this.shortModeTimeoutId);
+      this.shortModeTimeoutId = null;
+    }
   }
 
   getIsPlaying(): boolean {
     return this.isPlaying;
+  }
+
+  /**
+   * تحكم في ما إذا كان tick() سيُطلق الأذان تلقائياً عند وصول وقت الصلاة.
+   * - على الويب: true (السلوك الافتراضي — لا حاجة لاستدعاء هذه الدالة)
+   * - على أندرويد: false (النظام Native يتولى التشغيل عبر PrayerAlarm.playAdhan)
+   *
+   * الـ tick نفسه (الذي يُطلق onTick للعد التنازلي UI) يستمر في العمل في الحالتين.
+   */
+  setAutoPlay(enabled: boolean): void {
+    this.autoPlayEnabled = enabled;
   }
 
   // ── Reload audio when muezzin changes ───────────────────────────────
@@ -249,6 +373,7 @@ class AdhanPlayer {
     this.stopAudio();
     this.tickCallbacks.clear();
     this.adhanCallbacks.clear();
+    this.adhanEndCallbacks.clear();
   }
 }
 

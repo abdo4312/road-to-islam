@@ -33,6 +33,18 @@ import { adhanPlayer } from './lib/adhanPlayer';
 import { AdhanOverlay } from './components/AdhanOverlay';
 
 
+async function askBatteryExemptionOnce(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const ASKED_KEY = 'battery_exemption_asked';
+  if (localStorage.getItem(ASKED_KEY)) return;
+  localStorage.setItem(ASKED_KEY, 'true');
+  try {
+    await PrayerAlarm.requestBatteryOptimizationExemption();
+  } catch {
+    // silent fail — مش مشكلة لو فشل
+  }
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -43,13 +55,30 @@ const queryClient = new QueryClient({
   },
 })
 
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const on  = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener('online',  on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online',  on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  return isOnline;
+}
+
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [adhanVisible, setAdhanVisible] = useState(false);
   const [adhanPrayerNameAr, setAdhanPrayerNameAr] = useState('');
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
+    askBatteryExemptionOnce(); // ← أضف هذا السطر فقط
     const startedAt = Date.now();
     let isCancelled = false;
     let isSplashHandled = false;
@@ -189,8 +218,15 @@ export default function App() {
             setAdhanVisible(true);
           } catch (err) {
             console.warn('PrayerAlarm.playAdhan failed, falling back to web audio:', err);
-            // Fallback للـ web audio player
+            // Fallback للـ web audio player:
+            // 1) أعد تحميل ملف الصوت بالمؤذن الحالي (يضمن ensureAudio جاهزية الملف)
+            // 2) شغّل الأذان يدوياً وأطلق onAdhan callbacks لإظهار overlay
+            //    (triggerManualFallback تُطلق الـ callbacks أولاً ثم تُحاول play)
             adhanPlayer.reloadForNewMuezzin();
+            adhanPlayer.triggerManualFallback(
+              extra.prayerName || '',
+              extra.prayerNameAr || ''
+            );
           }
         }
       }
@@ -221,12 +257,26 @@ export default function App() {
   useEffect(() => {
     adhanPlayer.start();
 
+    // على أندرويد: امنع التشغيل التلقائي للأذان من طبقة الويب، لأن النظام Native
+    // (PrayerAlarm.playAdhan) هو المسؤول. الـ tick نفسه يبقى يعمل لإطلاق
+    // onTick callbacks التي يعتمد عليها العد التنازلي UI في ToolsScreens.
+    // على الويب: ابقِ التشغيل التلقائي مفعّلاً (السلوك الافتراضي).
+    if (Capacitor.isNativePlatform()) {
+      adhanPlayer.setAutoPlay(false);
+    }
+
     const unsubAdhan = adhanPlayer.onAdhan(({ prayerNameAr }) => {
-      // على Android: localNotificationReceived بيتولى تشغيل الأذان والـ overlay
-      // عبر PrayerAlarm.playAdhan() — نتجنب التشغيل المزدوج هنا
-      if (Capacitor.isNativePlatform()) return;
+      // هذا الـ callback يُطلق الآن فقط في حالتين:
+      //   1) على الويب: تلقائياً من tick() عند وصول وقت الصلاة
+      //   2) على أندرويد: فقط من triggerManualFallback() في كتلة catch
+      //      كـ Fallback عند فشل PrayerAlarm.playAdhan()
+      // في الحالتين نريد إظهار overlay — لا حاجة لشرط isNativePlatform بعد الآن.
       setAdhanPrayerNameAr(prayerNameAr);
       setAdhanVisible(true);
+    });
+
+    const unsubAdhanEnd = adhanPlayer.onAdhanEnd(() => {
+      setAdhanVisible(false);
     });
 
     // Reload audio on muezzin change (storage event from MuezzinSelector)
@@ -239,14 +289,32 @@ export default function App() {
 
     return () => {
       unsubAdhan();
+      unsubAdhanEnd();
       window.removeEventListener('storage', handleStorage);
       adhanPlayer.destroy();
     };
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
+    <>
+      {!isOnline && (
+        <div style={{
+          background: '#f59e0b',
+          color: '#fff',
+          textAlign: 'center',
+          padding: '6px',
+          fontSize: '13px',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 9999,
+        }}>
+          📵 لا يوجد اتصال — يتم عرض البيانات المحفوظة
+        </div>
+      )}
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
         <AnimatePresence mode="wait">
           {showSplash && <SplashLoader key="splash" />}
           {showOnboarding && <Onboarding key="onboarding" onComplete={handleOnboardingComplete} />}
@@ -308,5 +376,6 @@ export default function App() {
         />
       </AuthProvider>
     </QueryClientProvider>
+    </>
   )
 }

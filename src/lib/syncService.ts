@@ -9,12 +9,23 @@ const CACHE_KEYS = {
   lastSync:      'last_sync_time',
 };
 
-const CACHE_TTL = 1000 * 60 * 5; // 5 دقايق
+const CACHE_TTL_FRESH  = 1000 * 60 * 5;       // 5 دقايق — يجيب من النت
+const CACHE_TTL_STALE  = 1000 * 60 * 60 * 24;  // 24 ساعة — يعرض offline
 
-function isCacheValid(key: string): boolean {
+function isCacheFresh(key: string): boolean {
   const lastSync = localStorage.getItem(CACHE_KEYS.lastSync + '_' + key);
   if (!lastSync) return false;
-  return Date.now() - parseInt(lastSync) < CACHE_TTL;
+  return Date.now() - parseInt(lastSync) < CACHE_TTL_FRESH;
+}
+
+function isCacheStale(key: string): boolean {
+  const lastSync = localStorage.getItem(CACHE_KEYS.lastSync + '_' + key);
+  if (!lastSync) return false;
+  return Date.now() - parseInt(lastSync) < CACHE_TTL_STALE;
+}
+
+function isOnline(): boolean {
+  return navigator.onLine;
 }
 
 function setCacheTime(key: string) {
@@ -23,7 +34,8 @@ function setCacheTime(key: string) {
 
 // ─── Sync subjects ─────────────────────────────────────────────
 async function syncSubjects(): Promise<void> {
-  if (isCacheValid('subjects')) return;
+  if (isCacheFresh('subjects')) return;
+  if (!isOnline() && isCacheStale('subjects')) return;
   try {
     const { data, error } = await supabase
       .from('subjects')
@@ -41,7 +53,8 @@ async function syncSubjects(): Promise<void> {
 
 // ─── Sync lectures ─────────────────────────────────────────────
 async function syncLectures(): Promise<void> {
-  if (isCacheValid('lectures')) return;
+  if (isCacheFresh('lectures')) return;
+  if (!isOnline() && isCacheStale('lectures')) return;
   try {
     const { data, error } = await supabase
       .from('lectures')
@@ -82,7 +95,8 @@ async function syncProgress(userId: string): Promise<void> {
 
 // ─── Sync notifications ────────────────────────────────────────
 async function syncNotifications(userId: string): Promise<void> {
-  if (isCacheValid('notifications')) return;
+  if (isCacheFresh('notifications')) return;
+  if (!isOnline() && isCacheStale('notifications')) return;
   try {
     const { data, error } = await supabase
       .from('notifications')

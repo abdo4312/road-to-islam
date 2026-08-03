@@ -2,6 +2,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { ForegroundService } from '@capawesome-team/capacitor-android-foreground-service';
 import { PrayerAlarm } from '../plugins/PrayerAlarm';
+import type { AdhanDurationMode } from '../plugins/PrayerAlarm';
 
 export const MUEZZINS = [
     { id: 'husary', label: 'الشيخ الحصري', file: 'adhan_husary' },
@@ -25,6 +26,27 @@ export function getIqamaDelay(): number {
 
 export function setIqamaDelay(minutes: number): void {
     localStorage.setItem('iqama_delay', minutes.toString());
+}
+
+// ── مدة الأذان ─────────────────────────────────────────────────────
+// القيم: "full" (افتراضي) | "short" (30 ثانية) | "silent" (beep متكرر)
+export function getAdhanDurationMode(): AdhanDurationMode {
+    const saved = localStorage.getItem('prayer_adhan_duration_mode') as AdhanDurationMode | null;
+    if (saved) return saved;
+
+    // ── ترحيل الإعدادات القديمة (Migration) ──
+    const oldSilent = localStorage.getItem('prayer_silent_mode');
+    if (oldSilent === 'true') {
+        localStorage.setItem('prayer_adhan_duration_mode', 'silent');
+        localStorage.removeItem('prayer_silent_mode');
+        return 'silent';
+    }
+    
+    return 'full';
+}
+
+export function setAdhanDurationMode(mode: AdhanDurationMode): void {
+    localStorage.setItem('prayer_adhan_duration_mode', mode);
 }
 
 // ── Channel ID فريد لكل مؤذن ─────────────────────────────────
@@ -333,6 +355,7 @@ export async function syncPrayersToNative(
     const mutedMap: Record<string, boolean> = mutedRaw ? JSON.parse(mutedRaw) : {};
     const mutedPrayers = Object.keys(mutedMap).filter(k => mutedMap[k]);
     const notificationsEnabled = localStorage.getItem('prayer_notifications') !== 'false';
+    const adhanDurationMode = getAdhanDurationMode();
 
     await PrayerAlarm.schedulePrayers({
       prayers,
@@ -340,6 +363,7 @@ export async function syncPrayersToNative(
       iqamaDelay,
       mutedPrayers,
       notificationsEnabled,
+      adhanDurationMode,
     });
 
     // بعد sync البيانات → شغّل الـ countdown
@@ -364,11 +388,11 @@ export async function setNativeNotificationsEnabled(enabled: boolean): Promise<v
   }
 }
 
-// ── تحديث الإعدادات الأصلية (بعد تغيير المؤذن مثلاً) ───────
-export async function updateNativeSettings(): Promise<void> {
+// ── تحديث الإعدادات الأصلية (بعد تغيير المؤذن أو مدة الأذان مثلاً) ──
+export async function updateNativeSettings(adhanDurationMode?: AdhanDurationMode): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
-    await PrayerAlarm.updateSettings();
+    await PrayerAlarm.updateSettings({ adhanDurationMode });
   } catch (err) {
     console.warn('updateNativeSettings failed:', err);
   }
@@ -383,3 +407,35 @@ export async function stopAdhan(): Promise<void> {
     console.warn('stopAdhan failed:', err);
   }
 }
+
+// ── فحص إذن النافذة العائمة ─────────────────────────
+export async function checkOverlayPermission(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const res = await PrayerAlarm.checkOverlayPermission();
+    return res.granted;
+  } catch (err) {
+    console.warn('checkOverlayPermission failed:', err);
+    return false;
+  }
+}
+
+// ── طلب إذن النافذة العائمة ─────────────────────────
+export async function requestOverlayPermission(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const res = await PrayerAlarm.requestOverlayPermission();
+    return res.prompted;
+  } catch (err) {
+    console.warn('requestOverlayPermission failed:', err);
+    return false;
+  }
+}
+
+// ── إيقاف فوري للأذان من داخل واجهة التطبيق (احتياطي بدون overlay) ──
+// تُستخدم في الشاشة الرئيسية فقط أثناء تشغيل الأذان/الإقامة فعليًا،
+// وخصوصًا حين تكون صلاحية النافذة العائمة غير ممنوحة.
+export async function stopAdhanFromApp(): Promise<void> {
+  await stopAdhan();
+}
+

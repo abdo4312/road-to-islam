@@ -549,8 +549,13 @@ export default function MainScreens() {
   const lastInitialRef = React.useRef<Screen | undefined>(initial)
   React.useEffect(() => {
     if (initial && initial !== lastInitialRef.current) {
+      // الفوتر navigate لـ screen جديدة — حدّث الـ screen
       lastInitialRef.current = initial
       setScreen(initial)
+    } else if (!initial && lastInitialRef.current) {
+      // Back button رجّع الـ location state لـ {} — ارجع لـ HOME
+      lastInitialRef.current = undefined
+      setScreen('HOME')
     }
   }, [initial])
 

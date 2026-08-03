@@ -22,3 +22,6 @@ android/
 # OS
 Thumbs.db
 
+
+stage-zip.ps1
+source-for-claude.zip

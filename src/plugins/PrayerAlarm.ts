@@ -5,16 +5,25 @@ export interface PrayerEntry {
   time: string;
 }
 
+export type AdhanDurationMode = 'full' | 'short' | 'silent';
+
 export interface SchedulePrayersOptions {
   prayers: PrayerEntry[];
   muezzin: string;
   iqamaDelay: number;
   mutedPrayers: string[];
   notificationsEnabled: boolean;
+  /** full | short | silent */
+  adhanDurationMode?: AdhanDurationMode;
 }
 
 export interface SetNotificationsEnabledOptions {
   enabled: boolean;
+}
+
+export interface UpdateSettingsOptions {
+  /** لو موجود → حدّث إعداد مدة الأذان فوراً في Native storage */
+  adhanDurationMode?: AdhanDurationMode;
 }
 
 export interface PlayAdhanOptions {
@@ -28,11 +37,14 @@ export interface PrayerAlarmPlugin {
   setNotificationsEnabled(opts: SetNotificationsEnabledOptions): Promise<{ success: boolean }>;
   startCountdown(): Promise<{ success: boolean }>;
   stopCountdown(): Promise<{ success: boolean }>;
-  updateSettings(): Promise<{ success: boolean }>;
+  updateSettings(opts?: UpdateSettingsOptions): Promise<{ success: boolean }>;
   /** شغّل الأذان بـ MediaPlayer — بيعرض إشعار بزر إيقاف */
   playAdhan(opts: PlayAdhanOptions): Promise<{ success: boolean }>;
   /** وقّف الأذان فوراً */
   stopAdhan(): Promise<{ success: boolean }>;
+  requestBatteryOptimizationExemption(): Promise<{ prompted: boolean }>;
+  checkOverlayPermission(): Promise<{ granted: boolean }>;
+  requestOverlayPermission(): Promise<{ prompted: boolean }>;
 }
 
 const PrayerAlarm = registerPlugin<PrayerAlarmPlugin>('PrayerAlarm', {
@@ -44,6 +56,9 @@ const PrayerAlarm = registerPlugin<PrayerAlarmPlugin>('PrayerAlarm', {
     updateSettings: async () => ({ success: true }),
     playAdhan: async () => ({ success: true }),
     stopAdhan: async () => ({ success: true }),
+    requestBatteryOptimizationExemption: async () => ({ prompted: false }),
+    checkOverlayPermission: async () => ({ granted: false }),
+    requestOverlayPermission: async () => ({ prompted: false }),
   },
 });
 

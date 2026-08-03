@@ -114,6 +114,25 @@ export const calculatePrayerStatus = (
   return { prayers, nextPrayer, nextPTimeInMinutes };
 };
 
+/** يرجع أقرب يوم سابق محفوظ في localStorage كـ fallback */
+function getLatestCachedPrayerData(): PrayerAPIResponse | null {
+  // دوّر على آخر 7 أيام
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = `prayer_data_${d.toISOString().split('T')[0]}`;
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      try {
+        return JSON.parse(raw) as PrayerAPIResponse;
+      } catch {
+        continue;
+      }
+    }
+  }
+  return null;
+}
+
 export const usePrayerTimes = (): UsePrayerTimesResult => {
   const [prayers, setPrayers] = useState<PrayerData[]>([]);
   const [nextPrayer, setNextPrayer] = useState<PrayerData | null>(null);
@@ -259,8 +278,14 @@ export const usePrayerTimes = (): UsePrayerTimesResult => {
 
         applyPrayerState(cachedData, currentCity);
       } catch (err) {
-        if (isMounted) {
-          setError(err instanceof Error ? err.message : 'Unknown error');
+        const fallbackData = getLatestCachedPrayerData();
+        if (fallbackData && isMounted) {
+          console.warn('Prayer API failed, using cached fallback data.');
+          const fallbackCity = localStorage.getItem('user_city') || 'London';
+          applyPrayerState(fallbackData, fallbackCity + ' (محفوظ)');
+          setError('لا يوجد اتصال — يتم عرض آخر بيانات محفوظة');
+        } else if (isMounted) {
+          setError(err instanceof Error ? err.message : 'تعذّر تحميل مواقيت الصلاة');
         }
       } finally {
         if (isMounted) {

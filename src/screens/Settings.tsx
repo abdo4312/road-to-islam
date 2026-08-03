@@ -8,8 +8,17 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n, { AppLanguage, applyLanguageAttributes, normalizeLanguageCode } from '../i18n';
-import { setNativeNotificationsEnabled } from '../lib/adhanService';
+import {
+  setNativeNotificationsEnabled,
+  checkOverlayPermission,
+  requestOverlayPermission,
+  getAdhanDurationMode,
+  setAdhanDurationMode,
+  updateNativeSettings,
+} from '../lib/adhanService';
 import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
+import type { AdhanDurationMode } from '../plugins/PrayerAlarm';
 
 const LANGUAGE_OPTIONS: Array<{ code: AppLanguage; label: string }> = [
   { code: 'en', label: 'English' },
@@ -39,6 +48,29 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
   const [gender, setGender] = useState<'male' | 'female' | ''>('');
   const isMentor = profile?.role === 'mentor';
   const [savingProfile, setSavingProfile] = useState(false);
+  const [overlayGranted, setOverlayGranted] = useState(false);
+  const [adhanDuration, setAdhanDuration] = useState<AdhanDurationMode>('full');
+
+  // Load overlay permission and listen for app resume
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    checkOverlayPermission().then((granted) => {
+      setOverlayGranted(granted);
+    });
+
+    const handleAppStateChange = App.addListener('appStateChange', (state) => {
+      if (state.isActive) {
+        checkOverlayPermission().then((granted) => {
+          setOverlayGranted(granted);
+        });
+      }
+    });
+
+    return () => {
+      void handleAppStateChange.then((h) => h.remove());
+    };
+  }, []);
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
@@ -78,6 +110,7 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
       setLanguage(normalizeLanguageCode(savedLanguage));
       setNotifications(localStorage.getItem('prayer_notifications') !== 'false');
       setCalcMethod(localStorage.getItem('calc_method') || '3');
+      setAdhanDuration(getAdhanDurationMode());
     };
     loadProfile();
   }, [profile]);
@@ -102,6 +135,15 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
     localStorage.setItem('prayer_notifications', nextNotif.toString());
     if (Capacitor.isNativePlatform()) {
       await setNativeNotificationsEnabled(nextNotif);
+    }
+  };
+
+  const changeAdhanDuration = async (mode: AdhanDurationMode) => {
+    setAdhanDuration(mode);
+    setAdhanDurationMode(mode);
+    if (Capacitor.isNativePlatform()) {
+      // مزامنة فورية للنظام الأصلي بدون إعادة جدولة كاملة
+      await updateNativeSettings(mode);
     }
   };
 
@@ -252,6 +294,79 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
               >
                 <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${notifications ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
+            </div>
+
+            {Capacitor.isNativePlatform() && (
+              <div className="p-4 flex flex-col gap-1.5 border-t border-gray-50 dark:border-gray-900/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 text-gray-700 dark:text-gray-200 font-medium">
+                    <div className="p-2 bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 rounded-lg">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="9" width="18" height="12" rx="2" ry="2" />
+                        <path d="M12 9V3" />
+                      </svg>
+                    </div>
+                    {language === 'ar' ? 'النافذة العائمة للأذن والاقامة' : 'Adhan & Iqama Floating Overlay'}
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await requestOverlayPermission();
+                    }}
+                    style={{ direction: 'ltr' }}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${overlayGranted ? 'bg-primary dark:bg-accent' : 'bg-gray-200 dark:bg-gray-700'}`}
+                  >
+                    <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${overlayGranted ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mr-11 rtl:mr-11 ltr:ml-11 leading-normal">
+                  {language === 'ar'
+                    ? overlayGranted
+                      ? 'مفعّلة حاليًا. لإيقافها، اضغط هنا للذهاب إلى إعدادات النظام وإغلاقها يدويًا من هناك.'
+                      : 'تسمح بظهور بطاقة تنبيه الأذان والإقامة فوق البرامج الأخرى مع زر إيقاف واضح وإمكانية سحبها يميناً أو يساراً لإغلاقها.'
+                    : overlayGranted
+                      ? 'Currently enabled. To turn it off, tap here to open system settings and disable it manually from there.'
+                      : 'Allows the adhan or iqama alert card to float over other apps with a clear stop button, and can be swiped away to dismiss.'}
+                </p>
+              </div>
+            )}
+
+            {/* ── مدة الأذان والإقامة ── */}
+            <div className="p-4 flex flex-col gap-3 border-t border-gray-50 dark:border-gray-900/50">
+              <div className="flex items-center gap-3 text-gray-700 dark:text-gray-200 font-medium">
+                <div className="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-lg">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </div>
+                {language === 'ar' ? 'مدة صوت الأذان' : 'Adhan Duration'}
+              </div>
+              
+              <div className="grid grid-cols-3 gap-2 ml-11 rtl:mr-11 rtl:ml-0 ltr:ml-11">
+                {[
+                  { id: 'full' as AdhanDurationMode, label: language === 'ar' ? 'كامل' : 'Full', desc: language === 'ar' ? 'الأذان كاملاً' : 'Full Adhan' },
+                  { id: 'short' as AdhanDurationMode, label: language === 'ar' ? 'قصير' : 'Short', desc: language === 'ar' ? '30 ثانية' : '30 seconds' },
+                  { id: 'silent' as AdhanDurationMode, label: language === 'ar' ? 'صامت' : 'Silent', desc: language === 'ar' ? 'تنبيه فقط' : 'Beep only' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => changeAdhanDuration(opt.id)}
+                    className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+                      adhanDuration === opt.id
+                        ? 'bg-primary/10 border-primary dark:bg-accent/20 dark:border-accent text-primary dark:text-accent'
+                        : 'border-gray-100 dark:border-gray-800 text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-white/5'
+                    }`}
+                  >
+                    <span className="text-xs font-bold">{opt.label}</span>
+                    <span className="text-[10px] opacity-60">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+              
+              <p className="text-[11px] text-gray-400 dark:text-gray-500 ml-11 rtl:mr-11 rtl:ml-0 leading-normal">
+                {adhanDuration === 'full' && (language === 'ar' ? 'سيتم تشغيل صوت الأذان كاملاً مع الكارت العائم.' : 'The full adhan will play with the floating overlay.')}
+                {adhanDuration === 'short' && (language === 'ar' ? 'سيتوقف الصوت ويختفي الكارت العائم تلقائياً بعد 30 ثانية.' : 'Audio will stop and overlay will hide automatically after 30s.')}
+                {adhanDuration === 'silent' && (language === 'ar' ? 'بدل صوت المؤذن، سيصدر تنبيه قصير متكرر. مفيد في الأماكن غير الطاهرة.' : 'Instead of adhan, a short beep will repeat. Useful in impure places.')}
+              </p>
             </div>
           </div>
         </div>
