@@ -1,0 +1,373 @@
+{
+  "protocol_version": "3.3.0",
+  "last_updated": "2026-08-24",
+  "project": "islame — Islam Prayer Times (Capacitor + React/TS + native Android)",
+  "task_status": {
+    "T-02": {
+      "title": "Native Adhan Overlay - Neon Ring",
+      "status": "DONE / PASS",
+      "final_root_cause": "ring View بيتعامل مع match_parent/wrap_content بنفس الطريقة (getDefaultSize behavior)، فكان بيسبب Feedback Loop يخلي الـ WindowManager window ياخد حجم الشاشة كاملة بدل حجم الكارت.",
+      "final_fix": "ring مقاسه 0dp/0dp في XML، وبيتحدد حجمه ومكانه برمجيًا (gravity=CENTER) في AdhanOverlayManager.show() بعد ما يتقاس overlayView الحقيقي جوه post().",
+      "architecture_change": "البنية اتغيرت من NeonRingDrawable (Canvas مخصص جوه AdhanOverlayManager، SweepGradient + BlurMaskFilter) إلى NeonRingView.java — كلاس View مستقل بيستخدم DashPathEffect على Path.addRoundRect لعمل تأثير 'مذنّبين' بيدوروا في اتجاهين متضادين (أخضر 0xFF00FF88 clockwise + سماوي 0xFF00E5FF counter-clockwise)."
+    },
+    "T-03": {
+      "title": "Card content redesign",
+      "status": "DONE / PASS",
+      "summary": "overlay_adhan_card.xml: اتشال الهلال والجرس، المسجد اتصغر لـ 140dp بشفافية 0.15 كخلفية زخرفية، النص بقى متمركز رأسيًا، الكارت الداخلي بقى FrameLayout بدل LinearLayout."
+    },
+    "T-04": {
+      "title": "UI bugs - back buttons + adhan scheduling",
+      "status": "DONE / PASS",
+      "fixes": [
+        "Settings.tsx: زرار الرجوع كان بيستخدم setScreen?.('HOME') بس setScreen مش موصول من أي parent — اتصلح باستخدام navigate('/') من react-router.",
+        "AskScreens.tsx (AskCategories): مكانش فيه زرار رجوع خالص — اتضاف زرار جديد + useNavigate import.",
+        "ToolsScreens.tsx (Qibla): زرار الرجوع كان absolute بنفس z-index (z-10) زي العنصر الشفاف اللي بعده فكان بياخد اللمسة عنصر تاني — اتصلح برفع z-index لـ z-20.",
+        "أذان بيتأخر أحيانًا: مفيش 'شبكة أمان' دورية تتأكد إن الـ AlarmManager alarms لسه مجدولة (كانت الجدولة بتعتمد بس على: أول فتح تطبيق في يوم جديد، أو أذان سابق يدق فعليًا، أو إعادة تشغيل الجهاز). الحل: ملف جديد PrayerRescheduleWorker.java (WorkManager، كل ساعة، بينادي PrayerScheduler.scheduleNextAlarms())، بيتسجل من BootReceiver.java وكمان من MainActivity.onCreate()."
+      ]
+    }
+  },
+  "files_state": [
+    {
+      "path": "android/app/src/main/res/layout/overlay_adhan_card.xml",
+      "role": "NATIVE overlay card layout — FINAL. FrameLayout root (bg=bg_neon_ring, clipToOutline=true) > NeonRingView overlay_neon_ring 0dp/0dp > FrameLayout overlay_inner_card (bg_card_inner, layout_margin 2dp) يحتوي: mosque watermark ImageView 140dp alpha 0.15 bottom|end (خلف كل المحتوى)، LinearLayout نص wrap_content-height paddingTop 20dp / paddingBottom 60dp / paddingStart 22dp / paddingEnd 12dp فيه overlay_prayer_title (#00FF88 22sp bold) + overlay_prayer_subtitle (#B3FFFFFF 12sp)، وImageButton overlay_stop_button 44x40dp bottom|end margin 12dp tint #00FF88. الهلال (ic_crescent) والجرس (ic_bell) اتشالوا خالص.",
+      "status": "APPLIED",
+      "critical_note": "كل الـ IDs الخمسة لازم تفضل موجودة بنفس الأسماء (overlay_neon_ring, overlay_inner_card, overlay_prayer_title, overlay_prayer_subtitle, overlay_stop_button) — AdhanOverlayManager بيعمل findViewById ليهم مباشرة."
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/overlay/NeonRingView.java",
+      "role": "ملف جديد — Custom View للنيون: بيستخدم DashPathEffect على Path.addRoundRect (inset 6f*density، cornerRadius 26f*density) لتأثير مذنّبين بيدوروا في اتجاهين متضادين — أخضر 0xFF00FF88 clockwise + سماوي 0xFF00E5FF counter-clockwise — strokeWidth 22f*density، BlurMaskFilter(12f, Blur.NORMAL)، LAYER_TYPE_SOFTWARE إجباري (شرط شغل BlurMaskFilter)، ValueAnimator phase كل 3000ms LinearInterpolator INFINITE مع invalidate() في كل frame. الرسم بيتبنى في onSizeChanged.",
+      "status": "APPLIED",
+      "critical_note": "View صفر المقاس (0dp) عمره ما بيرسم أي حاجة مهما اتعملت له — درس الجلسة: الـ View نفسه لازم ياخد مقاس برمجي (اتعمل في AdhanOverlayManager) وإلا كل تجارب الألوان والسمك هتبان وكأنها مش بتوصل."
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/overlay/AdhanOverlayManager.java",
+      "role": "Overlay window manager (TYPE_APPLICATION_OVERLAY, RTL, CARD_WIDTH_DP=340 capped بعرض الشاشة). show(): بعد windowManager.addView بيعمل overlayView.post() ويحدد ring LayoutParams width/height = overlayView.getWidth()/getHeight() مع cast لـ FrameLayout.LayoutParams و gravity=CENTER. باقي الملف: canShowOverlay, hide/hideInternal, touch gestures (drag/swipe-out/animateBack), animateOut, animateBack, dismissAndStopAdhan (broadcast StopAdhanReceiver).",
+      "status": "APPLIED",
+      "critical_note": "لازم gravity=CENTER على ring LayoutParams، من غيرها الحلقة بتتحط في زاوية (افتراضي TOP|START وفي RTL يعني فوق-يمين فيزيائيًا) فبتبان مقصوصة تحت وشمال. ولازم cast لـ FrameLayout.LayoutParams قبل setLayoutParams عشان الـ gravity يتطبق فعلاً."
+    },
+    {
+      "path": "android/app/src/main/res/drawable/bg_card_inner.xml",
+      "role": "Inner glass card background: rgba(6,78,59,0.70) = #B2064E3B, 20dp radius.",
+      "status": "APPLIED",
+      "critical_note": "درس تشخيصي: أخضر نيوني فوق خلفية خضراء غامقة بيدمج بصريًا حتى بشفافية عالية — لو النيون 'اختفى' جرّب لون diagnostic من طيف مختلف تمامًا (أحمر 0xFFFF0000 ظهر فورًا وأثبت إن مسار الرسم سليم) قبل ما تغيّر أي منطق."
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/worker/PrayerRescheduleWorker.java",
+      "role": "ملف جديد — WorkManager Worker شبكة أمان للأذان: PeriodicWorkRequest كل ساعة باسم دوري فريد 'prayer_reschedule_safety_net' (ExistingPeriodicWorkPolicy.UPDATE) بينادي PrayerScheduler.scheduleNextAlarms(context)؛ Result.retry() عند أي استثناء؛ بيرجع success مبكرًا لو الإشعارات متعطلة.",
+      "status": "APPLIED",
+      "critical_note": "اتأكدنا من تسجيله فعليًا على الجهاز: dumpsys jobscheduler أظهر JOB للباكدج بـ Minimum latency +59m59s (الدورة الساعية) وحالة Doze whitelisted: true."
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/receiver/BootReceiver.java",
+      "role": "BOOT_COMPLETED / MY_PACKAGE_REPLACED / QUICKBOOT_POWERON → PrayerScheduler.scheduleNextAlarms(context) + PrayerCountdownWorker.start(context) + PrayerRescheduleWorker.start(context) + إقلاع PrayerCountdownService foreground لو الإشعارات مفعلة.",
+      "status": "APPLIED",
+      "critical_note": "الإضافة دي سدت ثغرة: قبلها لو أذان واحدة فشل بصمت (Doze/Battery optimization) كانت السلسلة كلها بتوقف لأن الجدولة كانت بتعتمد على نجاح الأذان السابق."
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/MainActivity.java",
+      "role": "BridgeActivity: registerPlugin(PrayerAlarmPlugin.class) قبل super.onCreate() + PrayerRescheduleWorker.start(this) بعد super.onCreate() عشان الـ hourly safety-net يتسجل من أول فتح للتطبيق بدون انتظار reboot.",
+      "status": "APPLIED",
+      "critical_note": null
+    },
+    {
+      "path": "src/screens/Settings.tsx",
+      "role": "صفحة الإعدادات — زرار الرجوع في الهيدر بقى onClick={() => navigate('/')} بدل setScreen?.('HOME') الاختياري غير الموصول بأي parent.",
+      "status": "APPLIED",
+      "critical_note": "أي شاشة بتترندر مباشرة من react-router route (زي /settings) مش بتستلم setScreen prop أصلاً — القاعدة: داخل صفحات الراوتر استخدم useNavigate() دايمًا."
+    },
+    {
+      "path": "src/screens/AskScreens.tsx",
+      "role": "AskCategories اتضاف له زرار رجوع جديد في الهيدر (navigate('/')، ChevronRight rotate-180، نفس ستايل الصفحات التانية) + استيراد useNavigate مع useLocation + const navigate = useNavigate() جوه الكومبوننت. AskDetail وMentor عندهم أزرار داخلية (setScreen داخلي) وكانوا شغالين أصلاً.",
+      "status": "APPLIED",
+      "critical_note": "استيراد useNavigate كان ناقص في الملف ده — 'useNavigate أصلاً مستورد' كان افتراض غلط اتصلح وقت التنفيذ."
+    },
+    {
+      "path": "src/screens/ToolsScreens.tsx",
+      "role": "Qibla back-button container اتغير من z-10 إلى z-20 (كان absolute بنفس z-index بتاع العنصر الشفاف المتغطي عليه فاللمسة كانت بتروح لغيره). Router الداخلي (PRAYER_TIMES/QIBLA/MOSQUES/HOME→Navigate) بيتحدث اعتمادًا على location.key.",
+      "status": "APPLIED",
+      "critical_note": "لو زرار absolute مش بيستقبل لمسة والمنطق سليم — اشك في z-index مع عناصر متطابقة الموضع. uiautomator dump بيديك bounds الفعلية لأي زرار قبل input tap (bottom nav الفعلي عند y≈1396-1436 مش أدنى الشاشة)."
+    }
+  ],
+  "issues_resolved": [
+    "النيون بيلف الشاشة كلها (L-shape): Feedback Loop خلى الـ WindowManager window ياخد مقاس الشاشة كامل — اتحل بالقياس البرمجي من overlayView + ring 0dp في XML (dumpsys Requested h=594 بدل 1532/1436).",
+    "النيون مخفي تمامًا رغم تعديل الألوان والسمك مرتين: ring View كان بتفضل 0dp فمكانش بيرسم أي حاجة أصلًا — اتشخص بمقارنة diagnostic أحمر ظهر فورًا (مسار الرسم سليم، المشكلة في المقاس).",
+    "النيون بيظهر جزئي (ناقص تحت وشمال): gravity افتراضي TOP|START مع RTL — اتحل بإضافة Gravity.CENTER صريح على FrameLayout.LayoutParams بتاع الحلقة.",
+    "النيون مختفي ورا الكارت الداخلي المعتم: تجارب gap (2dp→6dp→8dp) + Blur.OUTER + قياس من overlayView بدل innerCard — انتهى نهائيًا باستبدال البنية كلها بـ NeonRingView.",
+    "نيون رفيع/خافت: رفع تدريجي للألوان (0x40→0x99→0xB0→0xF0) والسمك (coreStroke 4→5→8، glowStroke 14→16→18) لحد البنية النهائية (comets بسمك 22f).",
+    "تنسيق الكارت (T-03): مسجد 140dp بشفافية 0.15 كخلفية أنيقة، نص متمركز رأسيًا، إزالة الهلال والجرس، الكارت مضغوط ومنظم — PASS بصريًا من المستخدم.",
+    "زرار رجوع Settings ميّت (setScreen?. غير موصول) — navigate('/') + تحقق عملي بالضغط عبر UI automation (رجع للهوم).",
+    "صفحة Ask من غير زرار رجوع خالص — اتضاف زرار جديد + useNavigate import + تحقق عملي (رجع للهوم).",
+    "زرار رجوع Qibla مش بيستقبل اللمسة (z-index z-10 متطابق مع العنصر اللي بعده) — z-20 + تحقق عملي (رجع للهوم).",
+    "أذان بيتأخر أحيانًا: عدم وجود آلية دورية تعيد جدولة الـ alarms — PrayerRescheduleWorker كل ساعة، اتسجل من BootReceiver وMainActivity، واتأكد تسجيله في dumpsys jobscheduler.",
+    "src/components/AdhanOverlay.tsx كان binary corrupted (بوّظ npm run build بالكامل) — استرجاع من git HEAD (git checkout) وبقى البناء ناجح."
+  ],
+  "environment_notes": {
+    "project_location": "المشروع اتنقل نهائيًا من E:\\Backup\\01-Projects\\islame\\islam-main (تالف/bit-rot — قراءة الملفات بتنتج garbage) إلى C:\\dev\\islame (سليم). كل الشغل دلوقتي وبعد كده لازم يكون على C:\\dev\\islame فقط.",
+    "git": "git repo موجود على C:\\dev\\islame (origin: https://github.com/abdo4312/road-to-islam.git، branch main) — لسه معملناش commit لأي تعديلات الجلسة دي.",
+    "device": "Infinix X6528 (XOS عدوانية مع background processes). adb wireless: أرقام الـ pairing port و connect port بيتغيروا كل جلسة — آخر جلسة: pair 192.168.100.14:44763 بكود مؤقت ثم connect 192.168.100.14:34475.",
+    "adb_pitfalls": "سكرين شوت: PowerShell redirect (>) بيبوظ الـ PNG — لازم cmd /c مع exec-out screencap -p. uiautomator dump + cat لملف محلي هو الطريقة الموثوقة لتحديد إحداثيات الأزرار قبل input tap.",
+    "xos_hiber_context": "XOS Hiber (Infinix HOT 40i) بيعمل freeze/proxy دوري للـ alarms والـ processes حتى مع battery optimization exemption ممنوح من أندرويد نفسه (تأكد بـ dumpsys deviceidle whitelist). المستخدم طبّق يدويًا: App launch → Manual mode + Auto-launch/Secondary launch/Run in background مفعّلين. الحل الكودي النهائي (Chronometer) بيتجنب المشكلة من الأساس بدل ما يحاول يقاومها."
+  },
+  "risk_register": [
+    {
+      "id": "R-03",
+      "status": "Resolved",
+      "note": "اتحل فعليًا في التنفيذ خلال جلسة 2026-08-23 (مسار حفظ/تمرير المؤذن — انظر T-06)."
+    },
+    {
+      "id": "R-04",
+      "status": "Resolved",
+      "note": "اتحل فعليًا في التنفيذ: تحويل elapsedRealtime الصريح اتنفذ واتحقق حي على الجهاز — العداد بيعرض رقم منطقي وعد تنازلي صحيح (انظر T-08)."
+    },
+    {
+      "id": "R-05",
+      "status": "Open",
+      "severity": "Minor",
+      "note": "لم يُقَس التوقيت الفعلي لأي مؤذن حيًا بعد (T-10) — لو ظهر فرق واضح وقت أذان حقيقي، تصحيح رقم في الخريطة كافٍ."
+    }
+  ],
+  "build_status": {
+    "last_build": "2026-08-22",
+    "command": "cd C:\\dev\\islame && npm install && npm run build && npx cap sync android && cd android && gradlew.bat clean && gradlew.bat :app:assembleDebug",
+    "raw_result": "vite: ✓ built in 20.07s | Gradle: BUILD SUCCESSFUL in 37s / 190 actionable tasks: 190 executed",
+    "apk_path": "android/app/build/outputs/apk/debug/app-debug.apk",
+    "deployed": "YES — installed على Infinix X6528 @ 192.168.100.14:34475 مع force-stop + إعادة فتح، وتحقق حي: تسجيل الـ Worker في jobscheduler + أزرار الرجوع الثلاثة اشتغلت فعليًا بالضغط."
+  },
+  "completed_tasks_archive_summary": [
+    "T-01 (2026-08-2x) — AdhanOverlay.tsx glassmorphism redesign: framer-motion slide، mosque badge، geometric border، bismillah — PASS.",
+    "T-02 (2026-08-22) — إعادة تصميم الـ overlay النيفي بالكامل (NeonRingView + قياس برمجي + PASS): التفاصيل الكاملة محفوظة في task_status.T-02 و files_state.",
+    "T-03 (قديم/2026-08-19) — PrayerCountdownService RemoteViews tick-based HH:MM:SS countdown + notification_countdown.xml."
+  ],
+  "completed_tasks_recent": [
+    "T-02 FINAL (2026-08-22) — Neon Ring PASS: البنية انتقلت لـ NeonRingView (DashPathEffect dual comets) مع قياس برمجي إجباري؛ تفاصيل الجذر والحل في task_status.T-02.",
+    "T-03 (2026-08-22) — Card content redesign PASS: mosque 140dp/alpha 0.15، إزالة crescent+bell، نص center_vertical، inner card FrameLayout.",
+    "T-04 (2026-08-22) — UI bugs PASS: أزرار رجوع Settings/Ask/Qibla + شبكة أمان جدولة الأذان (PrayerRescheduleWorker) — كله متحقق منه على الجهاز.",
+    {
+      "id": "T-05",
+      "title": "Footer active-tab لا يتحدّث بعد back من Learn",
+      "files_touched": ["src/screens/MainScreens.tsx"],
+      "root_cause": "handleSetScreen مفيهاش case 'HOME' صريح، فالرجوع كان بيعمل local setScreen بس من غير navigate() — location.state فاضل زي ما هو فيتفضل BottomNav شايل Learn active",
+      "fix": "أضيف case 'HOME': navigate('/', { replace: true })",
+      "confidence_score": 95,
+      "status": "DONE / PASS — مؤكد بـ pixel scan حي على الجهاز",
+      "rollback_ref": "لا يوجد commit — كل تعديلات جلسة 2026-08-23 لسه غير محفوظة على git، يحتاج قرار وتنفيذ من صاحب المشروع"
+    },
+    {
+      "id": "T-06",
+      "title": "المؤذن الغلط بيشتغل بدل المؤذن المختار",
+      "files_touched": [
+        "android/app/src/main/java/com/islame/app/plugins/PrayerAlarmPlugin.java",
+        "src/lib/adhanService.ts",
+        "src/components/MuezzinSelector.tsx",
+        "src/plugins/PrayerAlarm.ts",
+        "android/app/src/main/java/com/islame/app/storage/PrayerDataStore.java (تعليق فقط)"
+      ],
+      "root_cause": "store.saveMuezzin() كان بيتنفذ بس جوه schedulePrayers()، اللي بترجع بصمت لو كاش أوقات الصلاة فاضي (scheduleAdhanFromCache early return) — فالمؤذن الجديد يفضل عالق في localStorage الويب بس، ما يوصلش للـ native store",
+      "fix": "updateSettings() في الـ plugin بقى يحفظ المؤذن مباشرة ومستقل عن وجود كاش الصلاة؛ MuezzinSelector بيمرره صراحة",
+      "logged_minor_exceptions": [
+        "Settings.tsx:146 — استدعاء positional قديم كان هيتكسر مع التوقيع الجديد، اتصلح بتمرير undefined للمؤذن",
+        "PrayerAlarm.ts UpdateSettingsOptions — إضافة muezzin?: string لسد TS2353 (type-only، بدون أثر runtime)"
+      ],
+      "confidence_score": 98,
+      "status": "DONE / PASS",
+      "rollback_ref": "لا يوجد commit — كل تعديلات جلسة 2026-08-23 لسه غير محفوظة على git، يحتاج قرار وتنفيذ من صاحب المشروع"
+    },
+    {
+      "id": "T-07",
+      "title": "قطع الأذان القصير عشوائي مش على حدود الجملة",
+      "files_touched": [
+        "android/app/src/main/java/com/islame/app/plugins/AdhanPlayerService.java",
+        "src/lib/adhanPlayer.ts"
+      ],
+      "root_cause": "رقم 30000ms ثابت hardcoded في المسارين، بدون علاقة بمحتوى الملف الصوتي أو حدود الجمل",
+      "fix": "تعديل الرقم لـ 38000ms (قيمة تقريبية موحدة معتمدة من صاحب المشروع، بدل تحليل دقيق لكل ملف مؤذن)",
+      "confidence_score": 99,
+      "status": "DONE / PASS — مؤكد بقياس حي على الجهاز",
+      "rollback_ref": "لا يوجد commit — كل تعديلات جلسة 2026-08-23 لسه غير محفوظة على git، يحتاج قرار وتنفيذ من صاحب المشروع"
+    },
+    {
+      "id": "T-08",
+      "title": "إشعار العد التنازلي بيتوقف/يتجمد بعد دقيقة تقريبًا",
+      "files_touched": [
+        "android/app/src/main/res/layout/notification_countdown.xml",
+        "android/app/src/main/java/com/islame/app/service/PrayerCountdownService.java"
+      ],
+      "root_cause": "الـ tick اليدوي بالثانية (nm.notify() كل 1000ms) كان بيستفز XOS Hiber (vendor battery/freeze manager) فيعمل freeze/unfreeze دوري كل ~35 ثانية للـ process، والـ Handler بتاع الـ tick بيقف فعليًا أثناء الفريز",
+      "fix": "استبدال TextView بـ Chronometer (RemoteViews.setChronometer) بيخلي العد يشتغل system-side مش في process التطبيق — صفر تحديثات إشعار بالثانية فمفيش استفزاز لـ Hiber؛ حذف tickRunnable/ensureTickScheduled() بالكامل + إلغاء wakeLock الدائم",
+      "critical_technical_note": "Chronometer.setBase يستخدم SystemClock.elapsedRealtime() مش System.currentTimeMillis() — لازم تحويل صريح (elapsedBase = SystemClock.elapsedRealtime() + (targetTimeMs - System.currentTimeMillis())) وإلا العداد يعرض رقم عشوائي كليًا",
+      "confidence_score": 95,
+      "status": "DONE / PASS — مؤكد حي: رقم منطقي وعد تنازلي صحيح على الجهاز",
+      "rollback_ref": "لا يوجد commit — كل تعديلات جلسة 2026-08-23 لسه غير محفوظة على git، يحتاج قرار وتنفيذ من صاحب المشروع"
+    },
+    {
+      "id": "T-09",
+      "title": "العداد كان بصيغة ثواني/Chronometer، اتغيّر لـ HH:MM بتحديث كل دقيقة",
+      "files_touched": [
+        "android/app/src/main/res/layout/notification_countdown.xml",
+        "android/app/src/main/java/com/islame/app/service/PrayerCountdownService.java"
+      ],
+      "root_cause": "مش باج — طلب تغيير UX صريح من صاحب المشروع: مفيش عرض ثواني، تحديث كل دقيقة بدل كل ثانية (لتقليل استفزاز Hiber 60 ضعف إضافي عن التصميم اللي في T-08)",
+      "fix": "رجوع من Chronometer (system-side) لـ TextView يدوي + tickRunnable بـ interval 60000ms بدل 1000ms، ودالة formatHm() جديدة ترجع HH:MM بس (formatHms القديمة اتسابت من غير حذف)",
+      "confidence_score": 96,
+      "status": "DONE / PASS — مؤكد حي عبر accessibility tree على الجهاز: 04:14→00:42، 04:17→00:39 (تحديث دقيق كل دقيقة، حساب صحيح)",
+      "note": "لون العداد #065F46 غامق وبيبان بصعوبة في dark mode — نفس الستايل الأصلي قبل T-08، مش regression، ملاحظة تجميلية مؤجلة",
+      "rollback_ref": "لا يوجد commit — لسه ضمن نفس دفعة 2026-08-23 غير المحفوظة"
+    },
+    {
+      "id": "T-10",
+      "title": "قطع الأذان القصير كان رقم موحّد 38000ms لكل المؤذنين، بقى مخصص لكل مؤذن",
+      "files_touched": [
+        "android/app/src/main/java/com/islame/app/plugins/AdhanPlayerService.java",
+        "src/lib/adhanPlayer.ts"
+      ],
+      "root_cause": "لا يوجد — تحسين دقة بطلب صاحب المشروع بعد قيم استمعها بنفسه لكل ملف صوت",
+      "fix": "خريطة SHORT_CUT_MS ثابتة في المسارين (native + web fallback): abdulbasit=39000, europe=37000, husary=24000, madinah=37000, makkah=27000، مع fallback=38000 لأي مؤذن غير موجود في الخريطة",
+      "confidence_score": 90,
+      "status": "DONE / code-verified — المنطق مطابق حرفيًا للجدول المعتمد. القياس الحي الآلي فشل بقيد أمني للنظام (AdhanPlayerService android:exported=false، رفض adb am start-foreground-service من خارج التطبيق) — مش خطأ كود. القياس الحي الفعلي مؤجل لحد أذان حقيقي",
+      "open_risks": ["R-05: لم يُقَس التوقيت الفعلي لأي مؤذن حيًا بعد — لو ظهر فرق واضح وقت أذان حقيقي، تصحيح رقم في الخريطة كافٍ (مش محتاج بروتوكول كامل)"],
+      "rollback_ref": "لا يوجد commit — لسه ضمن نفس دفعة 2026-08-23 غير المحفوظة"
+    },
+    {
+      "id": "T-11",
+      "title": "إعادة تصميم إشعار العد التنازلي (تحسين UX بطلب صاحب المشروع)",
+      "files_touched": [
+        "android/app/src/main/res/layout/notification_countdown.xml",
+        "android/app/src/main/java/com/islame/app/service/PrayerCountdownService.java"
+      ],
+      "root_cause": "لا يوجد باج — طلب تصميم صريح: (1) الشكل القديم (3 سطور: عنوان+عداد+نص) كان بيتقص في الوضع المطوي لأن ارتفاعه يتخطى حد الإشعار المطوي (~64dp)، فمكانش العداد ظاهر أصلاً من غير فتح الإشعار، (2) اللون #065F46 القديم غامق جدًا وبيداخ مع خلفية الشيد الغامقة",
+      "fix": "تصميم جديد بسطرين بس (notif_body اتشال من الـ layout خالص): اسم الصلاة بالذهبي (#D4AF37، 12sp) فوق، العداد بالأخضر الفاتح (#34D399، 23sp) تحته. المقاسات والـ padding اتقللوا (paddingTop/Bottom 6dp بدل 10dp، هامش بين السطرين 1dp) عشان الإجمالي يفضل تحت حد الإشعار المطوي فيبان العداد فورًا من غير ما تحتاج تفتح الإشعار",
+      "iteration_note": "أول محاولة (padding 10dp + عنوان 13sp + عداد 28sp) فشلت — العداد كان مقطوع نص لأسفل في الوضع المطوي (تخطى حد الـ 64dp). اتصلح بتقليل المقاسات في نفس الجلسة",
+      "confidence_score": 92,
+      "status": "DONE / PASS — مؤكد بصريًا من صاحب المشروع على الجهاز الحقيقي بعد التصحيح",
+      "rollback_ref": "لا يوجد commit — لسه ضمن نفس دفعة 2026-08-23/24 غير المحفوظة"
+    }
+  ],
+  "current_blocker": null,
+  "next_steps_for_new_session": [
+    "التأكد بصريًا من زرار رجوع القبلة بعد تعديل z-index (لسه محتاج تأكيد المستخدم النهائي).",
+    "مفيش commit لأي من التعديلات دي على git لسه — يحتاج قرار من صاحب المشروع."
+  ],
+  "files": [
+    {
+      "path": "src/components/AdhanOverlay.tsx",
+      "role": "In-app adhan alert overlay (web layer). Glassmorphism card sliding from top via framer-motion y:'-120%', mosque SVG badge, Islamic geometric border, bismillah, single dismiss button 'إيقاف الأذان'. NO countdown, NO neon.",
+      "evidence": "AdhanOverlay.tsx:45-83 (mosque badge), 87-117 (geometric border), 121 (bismillah), 169-177 (dismiss button); no countdown/neon tokens found",
+      "touched": "T-01"
+    },
+    {
+      "path": "android/app/src/main/res/layout/overlay_adhan_card.xml",
+      "role": "[SUPERSEDED — see files_state] النسخة الحالية النهائية: root FrameLayout (bg_neon_ring, clipToOutline) > NeonRingView overlay_neon_ring 0dp/0dp > inner FrameLayout overlay_inner_card (margin 2dp) بمسجد 140dp alpha 0.15 + نص center-vertical + زرار إيقاف bottom|end. الهلال والجرس اتشالوا.",
+      "evidence": "files_state entry لهذا الملف تحتوي الوصف الكامل المحدث",
+      "touched": "T-02, T-03"
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/overlay/AdhanOverlayManager.java",
+      "role": "[SUPERSEDED — see files_state] النسخة الحالية: NeonRingDrawable اتشالت خالص؛ الحلقة بقت NeonRingView ومقاسها/gravity بيتحددوا برمجيًا في overlayView.post() جوه show().",
+      "evidence": "files_state entry لهذا الملف تحتوي الوصف الكامل المحدث",
+      "touched": "T-02"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/bg_neon_ring.xml",
+      "role": "Transparent rounded shape (22dp corners). Outline source for the wrapper's clipToOutline ONLY.",
+      "evidence": "bg_neon_ring.xml: solid #00000000 + corners 22dp",
+      "touched": "T-02"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/bg_card_inner.xml",
+      "role": "Inner glass card background: rgba(6,78,59,0.70) = #B2064E3B, 20dp radius.",
+      "evidence": "bg_card_inner.xml: solid #B2064E3B + corners 20dp",
+      "touched": "T-02"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/bg_neon_button.xml",
+      "role": "Stop button background: fill #4000FF88, stroke #9900FF88 1dp, radius 12dp.",
+      "evidence": "bg_neon_button.xml: solid #4000FF88 + stroke #9900FF88 1dp + corners 12dp",
+      "touched": "T-02"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_crescent.xml",
+      "role": "Crescent icon asset — لسه موجود على القرص لكن REMOVED من overlay_adhan_card.xml في T-03 (redesign).",
+      "evidence": "asset on disk; not referenced by current layout",
+      "touched": "T-02, T-03"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_bell.xml",
+      "role": "Bell icon asset — لسه موجود على القرص لكن REMOVED من overlay_adhan_card.xml في T-03 (redesign).",
+      "evidence": "asset on disk; not referenced by current layout",
+      "touched": "T-02, T-03"
+    },
+    {
+      "path": "android/app/src/main/res/drawable-xxhdpi/ic_mosque_overlay.png",
+      "role": "Mosque watermark asset (480x480, 32bpp ARGB, 79,714 bytes). مستخدم حاليًا في اللايout بمقاس 140dp وalpha 0.15 (بعد T-03).",
+      "evidence": "MD5 1EEF37A11034E1269EF0B6BFE58214F5 (matches source copy); 480x480 Format32bppArgb",
+      "touched": "T-02, T-03"
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/service/PrayerCountdownService.java",
+      "role": "[SUPERSEDED — see T-09, T-11] النسخة الحالية: TextView يدوي بـ tickRunnable كل 60 ثانية (T-09)، صيغة HH:MM بس من غير ثواني (formatHm)، notif_body اتشال من الـ layout خالص فمفيش setTextViewText(R.id.notif_body,...) بيتحدث في أي مكان. wakeLock الدائم اتلغى.",
+      "evidence": "T-09: accessibility tree أثبت تحديث كل دقيقة (00:42→00:39)؛ T-11: build + تثبيت + صاحب المشروع أكّد PASS بصريًا على الجهاز",
+      "touched": "T-03-old, T-08, T-09, T-11"
+    },
+    {
+      "path": "android/app/src/main/res/layout/notification_countdown.xml",
+      "role": "[SUPERSEDED — see T-11] النسخة الحالية: سطرين بس — notif_title ذهبي (#D4AF37, 12sp) + countdown_text أخضر فاتح (#34D399, 23sp, monospace). notif_body اتشال خالص من الـ layout. padding 6dp عشان يفضل تحت حد الإشعار المطوي (~64dp).",
+      "evidence": "notification_countdown.xml:9-25 (2 TextViews فقط، لا Chronometer، لا notif_body)",
+      "touched": "T-03-old, T-08, T-09, T-11"
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/receiver/PrayerAlarmReceiver.java",
+      "role": "Alarm receiver: fires AdhanPlayerService (startForegroundService) + reschedules PrayerScheduler + restarts countdown. Works with app in background — the trigger for the native overlay.",
+      "evidence": "PrayerAlarmReceiver.java:29-46 (service start), 54 (reschedule)",
+      "touched": null
+    },
+    {
+      "path": "android/app/src/main/java/com/islame/app/scheduler/PrayerScheduler.java",
+      "role": "جدولة الأذان والإقامة عبر AlarmManager (setExactAndAllowWhileIdle, RTC_WAKEUP) لكل صلاة + Iqama (+iqamaDelay). scheduleNextAlarms() بتتنادى من PrayerAlarmReceiver وBootReceiver والآن كمان من PrayerRescheduleWorker كل ساعة.",
+      "evidence": "PrayerScheduler.java:54-72 (adhan alarm), 74-93 (iqama alarm), cancelAllAlarms 100-133",
+      "touched": "T-04 (indirect — caller added)"
+    },
+    {
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "role": "Manifest: SYSTEM_ALERT_WINDOW + FOREGROUND_SERVICE(+SPECIAL_USE/MEDIA_PLAYBACK) + SCHEDULE_EXACT_ALARM + USE_EXACT_ALARM + POST_NOTIFICATIONS; services (AdhanPlayerService, IqamaPlayerService, PrayerCountdownService) + receivers (PrayerAlarm, IqamaAlarm, StopAdhan, Boot, ServiceRestart).",
+      "evidence": "AndroidManifest.xml:20 (overlay permission), 52-98 (services), 85-114 (receivers)",
+      "touched": null
+    },
+    {
+      "path": "android/app/src/main/res/drawable/bg_overlay_card_rounded.xml",
+      "role": "LEGACY drawable from the pre-T-02 compact bar design — still on disk, no longer referenced by overlay_adhan_card.xml.",
+      "evidence": "on disk; not referenced in current layout",
+      "touched": null
+    },
+    {
+      "path": "android/app/src/main/res/drawable/bg_overlay_icon_circle.xml",
+      "role": "LEGACY circular icon background — still on disk, not referenced by current layout.",
+      "evidence": "on disk; not referenced in current layout",
+      "touched": null
+    },
+    {
+      "path": "android/app/src/main/res/drawable/bg_overlay_stop_button.xml",
+      "role": "LEGACY stop button background — still on disk, replaced by bg_neon_button.xml.",
+      "evidence": "on disk; not referenced in current layout",
+      "touched": null
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_stop_circle_filled.xml",
+      "role": "Stop icon used by the overlay stop button: fillColor #FFFFFF, pathData M6,6h12v12H6z, tinted #00FF88 by the layout.",
+      "evidence": "ic_stop_circle_filled.xml:9 (pathData)",
+      "touched": null
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_notification.xml",
+      "role": "Small vector icon for the ghost notification (AdhanPlayerService + countdown).",
+      "evidence": "referenced by AdhanPlayerService.buildNotification()",
+      "touched": null
+    }
+  ],
+  "integrity_notes": [
+    "Post-neon build verified: IDs overlay_prayer_title/overlay_stop_button/overlay_neon_ring/overlay_inner_card present in packaged layout; no fontFamily/font refs; no TODO/debug code (only pre-existing printStackTrace catch).",
+    "Earlier misreport ('BUILD SUCCESSFUL 1m 3s' for an aborted run) corrected; all build results now quoted verbatim from tool output.",
+    "adhan-overlay-preview.html (project root) — HTML/CSS/JS preview of the earlier design with the real ic_mosque_overlay.png embedded as base64; NOTE: بيقعرض التصميم القديم (crescent+bell header) مش النهائي بعد T-03.",
+    "2026-08-22: src/components/AdhanOverlay.tsx اتلقى عليه binary corruption (10,120 bytes، أول bytes 24 1A 9C 92...، LastWriteTime 08/18/2026) كان بيكسر npm run build بالكامل (ERROR: Expected ';' but found '\\x1a') — استُرجع من git HEAD (git checkout، 4,098 chars) وبنى ناجح بعدها. سبب الفساد غير معروف (غالبًا مرتبط بتلف قرص E: القديم).",
+    "2026-08-22: كل نتائج التحقق (jobscheduler latency +59m59s، أزرار الرجوع الثلاثة) مأخوذة من UI automation حي على الجهاز (input tap بإحداثيات من uiautomator dump + قراءة نصوص الشاشة)، وسكرين شوتات موثقة في C:\\Users\\Dell\\ui_*.png."
+  ]
+}

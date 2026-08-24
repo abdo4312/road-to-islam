@@ -26,7 +26,9 @@ export const MuezzinSelector: React.FC<Props> = ({ onClose }) => {
 
         if (Capacitor.isNativePlatform()) {
             // Update native plugin settings (muezzin, iqama delay, etc.)
-            await updateNativeSettings();
+            // ✅ FIX: نمرر المؤذن صراحة هنا عشان يتسجل native-side فورًا،
+            // مش نعتمد بس على scheduleAdhanFromCache() اللي ممكن ترجع بصمت لو الكاش فاضي
+            await updateNativeSettings(selected);
 
             // Re-schedule all today's adhan notifications with the new muezzin
             // This takes effect immediately without needing to reopen the prayer times screen

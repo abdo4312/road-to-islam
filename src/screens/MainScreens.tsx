@@ -561,6 +561,13 @@ export default function MainScreens() {
 
   const handleSetScreen = React.useCallback((s: Screen) => {
     switch (s) {
+      case 'HOME':
+        // ✅ FIX: بدل ما نرجع لـ Home بـ local state بس (مبيمسحش location.state)،
+        // بنعمل navigate فعلي عشان location.state.initialScreen يترجع undefined
+        // ولو سبناها زي الأول، BottomNav فاضل شايل آخر initialScreen (زي 'LEARN_PROGRAM')
+        // كـ active حتى بعد الرجوع فعليًا للهوم.
+        navigate('/', { replace: true })
+        break
       case 'ASK_CATEGORIES':
       case 'MENTOR':
         navigate('/ask', { replace: true })

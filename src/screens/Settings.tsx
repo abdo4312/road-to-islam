@@ -143,7 +143,7 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
     setAdhanDurationMode(mode);
     if (Capacitor.isNativePlatform()) {
       // مزامنة فورية للنظام الأصلي بدون إعادة جدولة كاملة
-      await updateNativeSettings(mode);
+      await updateNativeSettings(undefined, mode);
     }
   };
 
@@ -217,7 +217,7 @@ export default function Settings({ setScreen }: { setScreen?: (s: Screen) => voi
         </div>
 
         <div className="flex items-center gap-3 relative z-10">
-          <button onClick={() => setScreen?.('HOME')} className="p-1.5 bg-white/10 hover:bg-white/20 transition rounded-full backdrop-blur-sm border border-white/20 tap-bounce">
+          <button onClick={() => navigate('/')} className="p-1.5 bg-white/10 hover:bg-white/20 transition rounded-full backdrop-blur-sm border border-white/20 tap-bounce">
             <ChevronRight className="rotate-180" size={24} />
           </button>
           <div className="flex items-center gap-2">

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Screen } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, MessageCircle, ChevronRight, ThumbsUp, ThumbsDown, ArrowLeft, Send, Clock, CheckCircle, BookOpen, Info } from 'lucide-react';
 import { FAQS, getFaqCategories, type FAQ } from '../constants/faq';
 import { supabase } from '../lib/supabase';
@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 // ══════════════════════════════════════════════════════════════
 export const AskCategories = ({ setScreen }: { setScreen: (s: Screen) => void }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const faqCategories = getFaqCategories();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -76,7 +77,12 @@ export const AskCategories = ({ setScreen }: { setScreen: (s: Screen) => void })
 
       {/* Header */}
       <div className="bg-primary text-white p-6 pt-12 pb-4 sticky top-0 z-20 shadow-md">
-        <h2 className="text-2xl font-bold font-serif text-accent mb-4">{t('ask.title')}</h2>
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={() => navigate('/')} className="p-1.5 bg-white/10 hover:bg-white/20 transition rounded-full backdrop-blur-sm border border-white/20 tap-bounce">
+            <ChevronRight className="rotate-180" size={24} />
+          </button>
+          <h2 className="text-2xl font-bold font-serif text-accent">{t('ask.title')}</h2>
+        </div>
 
         {/* Tabs */}
         <div className="flex bg-white/10 rounded-2xl p-1 gap-1 mb-4">

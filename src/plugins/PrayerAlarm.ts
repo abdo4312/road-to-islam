@@ -24,6 +24,8 @@ export interface SetNotificationsEnabledOptions {
 export interface UpdateSettingsOptions {
   /** لو موجود → حدّث إعداد مدة الأذان فوراً في Native storage */
   adhanDurationMode?: AdhanDurationMode;
+  /** لو موجود → حدّث المؤذن المختار فوراً في Native storage */
+  muezzin?: string;
 }
 
 export interface PlayAdhanOptions {

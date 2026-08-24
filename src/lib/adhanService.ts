@@ -389,10 +389,10 @@ export async function setNativeNotificationsEnabled(enabled: boolean): Promise<v
 }
 
 // ── تحديث الإعدادات الأصلية (بعد تغيير المؤذن أو مدة الأذان مثلاً) ──
-export async function updateNativeSettings(adhanDurationMode?: AdhanDurationMode): Promise<void> {
+export async function updateNativeSettings(muezzin?: string, adhanDurationMode?: AdhanDurationMode): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
-    await PrayerAlarm.updateSettings({ adhanDurationMode });
+    await PrayerAlarm.updateSettings({ muezzin, adhanDurationMode });
   } catch (err) {
     console.warn('updateNativeSettings failed:', err);
   }

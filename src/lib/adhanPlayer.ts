@@ -32,6 +32,13 @@ const CDN_FALLBACKS: Record<string, string> = {
 
 // ── مدة الأذان ─────────────────────────────────────────────────────
 const SILENT_BEEP_URL = '/audio/notification_beep.mp3';
+const SHORT_CUT_MS: Record<string, number> = {
+  abdulbasit: 39_000,
+  europe: 37_000,
+  husary: 24_000,
+  madinah: 37_000,
+  makkah: 27_000,
+};
 function getAdhanDurationMode(): string {
   return localStorage.getItem('prayer_adhan_duration_mode') || 'full';
 }
@@ -233,15 +240,16 @@ class AdhanPlayer {
       audio.currentTime = 0;
       await audio.play();
 
-      // ── الوضع القصير: إيقاف الصوت والكارت بعد 30 ثانية ──
+      // ── الوضع القصير: إيقاف الصوت والكارت بعد المدة المخصصة لكل مؤذن ──
       if (mode === 'short') {
+        const cutMs = SHORT_CUT_MS[this.currentMuezzin] ?? 38_000;
         this.shortModeTimeoutId = setTimeout(() => {
           this.stopAudio();
           this.notifyAdhanEnd();
           // ملاحظة: الـ overlay يختفي لأن stopAudio يغيّر isPlaying لـ false
           // والـ overlay في React غالباً مربوط بحالة الـ audio أو يُغلق يدوياً
           // لكن لضمان الإغلاق التام، نُطلق الـ callbacks بحالة فارغة أو نعتمد على stopAudio
-        }, 30_000);
+        }, cutMs);
       }
     } catch (err) {
       // Autoplay blocked — will try on next user interaction
@@ -379,3 +387,4 @@ class AdhanPlayer {
 
 // Export singleton
 export const adhanPlayer = new AdhanPlayer();
+

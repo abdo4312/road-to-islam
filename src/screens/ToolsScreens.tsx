@@ -39,7 +39,7 @@ export const Qibla = ({ setScreen }: { setScreen: (s: Screen) => void }) => {
       animate={{ opacity: 1, x: 0 }}
       className="flex flex-col h-full bg-[#0d1b0e] text-white pb-20 overflow-y-auto relative islamic-pattern"
     >
-      <div className="absolute top-4 left-4 z-10 flex">
+      <div className="absolute top-4 left-4 z-20 flex">
         <button
           onClick={() => setScreen('HOME')}
           className="p-2 bg-white/10 hover:bg-white/20 transition rounded-full backdrop-blur-sm border border-white/10 tap-bounce"
