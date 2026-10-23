@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Archives and packaged builds
+*.apk
+*.aab
+*.rar
+*.zip
+
+# Android generated files
+android/.gradle/
+android/.idea/
+android/.kotlin/
+android/.externalNativeBuild/
+android/.cxx/
+android/build/
+android/app/build/
+android/captures/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/app/google-services.json
+android/app/src/main/assets/public/
+android/app/src/main/java.rar
+android/app/src/main/main.rar

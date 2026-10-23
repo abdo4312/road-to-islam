@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_neon_ring"
+    android:outlineProvider="background"
+    android:clipToOutline="true">
+
+    <com.islame.app.overlay.NeonRingView
+        android:id="@+id/overlay_neon_ring"
+        android:layout_width="0dp"
+        android:layout_height="0dp" />
+
+    <FrameLayout
+        android:id="@+id/overlay_inner_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="2dp"
+        android:background="@drawable/bg_card_inner"
+        android:outlineProvider="background"
+        android:clipToOutline="true">
+
+        <ImageView
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_gravity="bottom|end"
+            android:alpha="0.15"
+            android:clickable="false"
+            android:contentDescription="@null"
+            android:focusable="false"
+            android:src="@drawable/ic_mosque_overlay" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingTop="20dp"
+            android:paddingStart="22dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="60dp">
+
+            <TextView
+                android:id="@+id/overlay_prayer_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="حان وقت الصلاة"
+                android:textColor="#00FF88"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/overlay_prayer_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="اضغط للإيقاف أو اسحب للإغلاق"
+                android:textColor="#B3FFFFFF"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/overlay_stop_button"
+            android:layout_width="44dp"
+            android:layout_height="40dp"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="12dp"
+            android:background="@drawable/bg_neon_button"
+            android:contentDescription="إيقاف"
+            android:padding="10dp"
+            android:src="@drawable/ic_stop_circle_filled"
+            android:tint="#00FF88" />
+
+    </FrameLayout>
+</FrameLayout>

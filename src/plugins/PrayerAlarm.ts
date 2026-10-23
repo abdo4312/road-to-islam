@@ -1,0 +1,89 @@
+import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+
+export interface PrayerEntry {
+  name: string;
+  time: string;
+}
+
+export type AdhanDurationMode = 'full' | 'short' | 'silent';
+
+export interface SchedulePrayersOptions {
+  prayers: PrayerEntry[];
+  muezzin: string;
+  iqamaDelay: number;
+  mutedPrayers: string[];
+  notificationsEnabled: boolean;
+  /** full | short | silent */
+  adhanDurationMode?: AdhanDurationMode;
+}
+
+export interface SetNotificationsEnabledOptions {
+  enabled: boolean;
+}
+
+export interface UpdateSettingsOptions {
+  /** لو موجود → حدّث إعداد مدة الأذان فوراً في Native storage */
+  adhanDurationMode?: AdhanDurationMode;
+  /** لو موجود → حدّث المؤذن المختار فوراً في Native storage */
+  muezzin?: string;
+  /** لو موجود → حدّث تأخير الإقامة (بالدقائق) فوراً في Native storage */
+  iqamaDelay?: number;
+  /** لو موجود → حدّث قائمة الصلوات المكتومة فوراً في Native storage */
+  mutedPrayers?: string[];
+  /** لو موجود → فعّل/عطّل الإشعارات فوراً في Native storage */
+  notificationsEnabled?: boolean;
+}
+
+export interface PlayAdhanOptions {
+  muezzin: string;      // e.g. 'adhan_makkah'
+  prayerName: string;   // e.g. 'Fajr'
+  prayerNameAr: string; // e.g. 'الفجر'
+}
+
+export interface PrayerAlarmPlugin {
+  schedulePrayers(opts: SchedulePrayersOptions): Promise<{ success: boolean }>;
+  setNotificationsEnabled(opts: SetNotificationsEnabledOptions): Promise<{ success: boolean }>;
+  startCountdown(): Promise<{ success: boolean }>;
+  stopCountdown(): Promise<{ success: boolean }>;
+  updateSettings(opts?: UpdateSettingsOptions): Promise<{ success: boolean }>;
+  /** شغّل الأذان بـ MediaPlayer — بيعرض إشعار بزر إيقاف */
+  playAdhan(opts: PlayAdhanOptions): Promise<{ success: boolean }>;
+  /** وقّف الأذان فوراً */
+  stopAdhan(): Promise<{ success: boolean }>;
+  requestBatteryOptimizationExemption(): Promise<{ prompted: boolean }>;
+  checkOverlayPermission(): Promise<{ granted: boolean }>;
+  requestOverlayPermission(): Promise<{ prompted: boolean }>;
+  /**
+   * Native→JS bridge: يُطلق عندما تبدأ AdhanPlayerService بتشغيل الأذان
+   * (حتى والتطبيق في الـ foreground) — لعرض الـ overlay.
+   */
+  addListener(
+    eventName: 'adhanStarted',
+    listenerFunc: (data: { prayerName: string; prayerNameAr: string }) => void,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  /** حالة الخدمة الأصلية الحالية — تُفحص عند استئناف التطبيق (سباق الإقلاع البارد) */
+  isAdhanPlaying(): Promise<{ playing: boolean; prayerNameAr?: string }>;
+  /** إذا كان الأذان يعمل وانتقل التطبيق للخلفية — أظهر الكارت النيوني Native */
+  showAdhanOverlayIfPlaying(): Promise<void>;
+}
+
+const PrayerAlarm = registerPlugin<PrayerAlarmPlugin>('PrayerAlarm', {
+  web: {
+    schedulePrayers: async () => ({ success: true }),
+    setNotificationsEnabled: async () => ({ success: true }),
+    startCountdown: async () => ({ success: true }),
+    stopCountdown: async () => ({ success: true }),
+    updateSettings: async () => ({ success: true }),
+    playAdhan: async () => ({ success: true }),
+    stopAdhan: async () => ({ success: true }),
+    requestBatteryOptimizationExemption: async () => ({ prompted: false }),
+    checkOverlayPermission: async () => ({ granted: false }),
+    requestOverlayPermission: async () => ({ prompted: false }),
+    addListener: async (_eventName: string, _listenerFunc: any): Promise<PluginListenerHandle> =>
+      ({ remove: async () => {} }) as unknown as PluginListenerHandle,
+    isAdhanPlaying: async () => ({ playing: false }),
+    showAdhanOverlayIfPlaying: async () => {},
+  },
+});
+
+export { PrayerAlarm };

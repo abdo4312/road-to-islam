@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Islam Journey</title>
+
+    <!-- Polyfill: navigator.locks for old Android WebView -->
+    <script>
+      if (!window.navigator.locks) {
+        const _locks = {};
+        window.navigator.locks = {
+          request: async function(name, optionsOrFn, fn) {
+            const callback = typeof optionsOrFn === 'function' ? optionsOrFn : fn;
+            return callback({ name: name, mode: 'exclusive' });
+          },
+          query: async function() {
+            return { held: [], pending: [] };
+          }
+        };
+      }
+    </script>
+
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

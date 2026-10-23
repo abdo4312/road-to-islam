@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Road To Islam</string>
+    <string name="title_activity_main">Islame</string>
+    <string name="package_name">com.islame.app</string>
+    <string name="custom_url_scheme">com.islame.app</string>
+</resources>
